@@ -22,7 +22,8 @@ const DataView = ({ userEmail }) => {
           skipEmptyLines: true,
           complete: (results) => {
             setCsvData(results.data);
-            filterDataByEmail(results.data, userEmail);
+            // Show all data (row-level security temporarily disabled)
+            setFilteredData(results.data);
             setIsLoading(false);
           },
           error: (error) => {

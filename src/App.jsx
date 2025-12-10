@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import Header from './components/Header'
-import PowerBIEmbed from './components/PowerBIEmbed'
+import MapView from './components/MapView'
 import DataView from './components/DataView'
+import ImpactCalculator from './components/ImpactCalculator'
 import Login from './components/Login'
 import './App.css'
 
@@ -52,7 +53,9 @@ function App() {
       
       {/* Main Content - Full Width */}
       <main className="pt-16">
-        {activeView === 'dashboard' ? <PowerBIEmbed /> : <DataView userEmail={user?.email} />}
+        {activeView === 'dashboard' && <MapView userEmail={user?.email} />}
+        {activeView === 'data' && <DataView userEmail={user?.email} />}
+        {activeView === 'impact' && <ImpactCalculator />}
       </main>
     </div>
   )
