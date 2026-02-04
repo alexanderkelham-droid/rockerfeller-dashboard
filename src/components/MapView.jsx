@@ -77,6 +77,12 @@ const MapView = ({ userEmail }) => {
   const [showCreateProject, setShowCreateProject] = useState(false); // Track if create project modal is open
   const [provisionalMarker, setProvisionalMarker] = useState(null); // Store provisional marker reference
   const provisionalMarkerRef = useRef(null); // Ref for provisional marker DOM element
+  
+  // Popup drag state
+  const [popupPosition, setPopupPosition] = useState({ x: null, y: null }); // null means use default centered position
+  const [isPopupDragging, setIsPopupDragging] = useState(false);
+  const [popupDragStart, setPopupDragStart] = useState({ x: 0, y: 0 });
+  const [popupDragOffset, setPopupDragOffset] = useState({ x: 0, y: 0 });
 
   // MapTiler API key - Get your free key from https://cloud.maptiler.com/
   // Sign up, go to Account > Keys, and copy your key here
@@ -104,6 +110,34 @@ const MapView = ({ userEmail }) => {
   const handleDragEnd = () => {
     setIsDragging(false);
   };
+
+  // Handle popup drag start
+  const handlePopupDragStart = (e) => {
+    e.preventDefault();
+    setIsPopupDragging(true);
+    const clientX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
+    const clientY = e.type === 'touchstart' ? e.touches[0].clientY : e.clientY;
+    setPopupDragStart({ x: clientX, y: clientY });
+    setPopupDragOffset({ x: popupPosition.x || 0, y: popupPosition.y || 0 });
+  };
+
+  // Handle popup drag move
+  const handlePopupDragMove = useCallback((e) => {
+    if (!isPopupDragging) return;
+    const clientX = e.type === 'touchmove' ? e.touches[0].clientX : e.clientX;
+    const clientY = e.type === 'touchmove' ? e.touches[0].clientY : e.clientY;
+    const deltaX = clientX - popupDragStart.x;
+    const deltaY = clientY - popupDragStart.y;
+    setPopupPosition({
+      x: popupDragOffset.x + deltaX,
+      y: popupDragOffset.y + deltaY
+    });
+  }, [isPopupDragging, popupDragStart, popupDragOffset]);
+
+  // Handle popup drag end
+  const handlePopupDragEnd = useCallback(() => {
+    setIsPopupDragging(false);
+  }, []);
 
   // Handle provisional marker for new project creation
   const handleProvisionalMarker = (markerData) => {
@@ -205,6 +239,29 @@ const MapView = ({ userEmail }) => {
       };
     }
   }, [isDragging, dragStartY, dragStartHeight]);
+
+  // Add/remove event listeners for popup dragging
+  useEffect(() => {
+    if (isPopupDragging) {
+      document.addEventListener('mousemove', handlePopupDragMove);
+      document.addEventListener('mouseup', handlePopupDragEnd);
+      document.addEventListener('touchmove', handlePopupDragMove);
+      document.addEventListener('touchend', handlePopupDragEnd);
+      return () => {
+        document.removeEventListener('mousemove', handlePopupDragMove);
+        document.removeEventListener('mouseup', handlePopupDragEnd);
+        document.removeEventListener('touchmove', handlePopupDragMove);
+        document.removeEventListener('touchend', handlePopupDragEnd);
+      };
+    }
+  }, [isPopupDragging, handlePopupDragMove, handlePopupDragEnd]);
+
+  // Reset popup position when a new plant is selected
+  useEffect(() => {
+    if (selectedPlant) {
+      setPopupPosition({ x: null, y: null });
+    }
+  }, [selectedPlant]);
 
   useEffect(() => {
     async function fetchData() {
@@ -842,7 +899,24 @@ const MapView = ({ userEmail }) => {
             })();
         
         return (
-          <div className="absolute top-20 left-1/2 transform -translate-x-1/2 bg-gradient-to-br from-white to-cyan-50/30 rounded-xl shadow-2xl border border-cyan-100/50 backdrop-blur-sm z-10 max-h-[80vh] overflow-hidden" style={{ width: '640px' }}>
+          <div 
+            className="fixed bg-gradient-to-br from-white to-cyan-50/30 rounded-xl shadow-2xl border border-cyan-100/50 backdrop-blur-sm z-[100] max-h-[80vh] overflow-hidden" 
+            style={{ 
+              width: '640px',
+              top: popupPosition.y !== null ? `calc(80px + ${popupPosition.y}px)` : '80px',
+              left: popupPosition.x !== null ? `calc(50% + ${popupPosition.x}px)` : '50%',
+              transform: popupPosition.x !== null ? 'translateX(-50%)' : 'translateX(-50%)',
+            }}
+          >
+            {/* Draggable Header Bar */}
+            <div 
+              onMouseDown={handlePopupDragStart}
+              onTouchStart={handlePopupDragStart}
+              className="flex items-center justify-center py-1.5 cursor-move hover:bg-cyan-50/50 transition-colors rounded-t-xl border-b border-cyan-100/30"
+            >
+              <div className="w-10 h-1 bg-gray-300 rounded-full"></div>
+            </div>
+            
             {/* Close button */}
             <button
               onClick={() => {
@@ -857,7 +931,7 @@ const MapView = ({ userEmail }) => {
                 setSelectedPlant(null);
                 setSelectedUnit('all');
               }}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors duration-200 z-10"
+              className="absolute top-6 right-4 text-gray-400 hover:text-gray-600 transition-colors duration-200 z-10"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -865,7 +939,7 @@ const MapView = ({ userEmail }) => {
             </button>
             
             {/* Header Section */}
-            <div className="px-8 pt-8 pb-6 border-b border-cyan-100/50">
+            <div className="px-8 pt-4 pb-6 border-b border-cyan-100/50">
               <h3 className="text-2xl font-semibold text-gray-800 mb-1 pr-8">{selectedPlant['Plant Name']}</h3>
               <p className="text-sm text-gray-500">{selectedPlant['Country']}</p>
             </div>
