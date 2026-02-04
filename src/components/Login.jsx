@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { supabase } from '../lib/supabaseClient';
 
 const Login = ({ onLogin }) => {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -14,36 +15,14 @@ const Login = ({ onLogin }) => {
     setLoading(true);
 
     try {
-      // Load users from localStorage (which includes CSV users + new signups)
-      const storedUsers = localStorage.getItem('allUsers');
-      let users = [];
-
-      if (storedUsers) {
-        users = JSON.parse(storedUsers);
-      } else {
-        // First time - load from CSV and store in localStorage
-        const response = await fetch('/src/data/users.csv');
-        const csvText = await response.text();
-        const lines = csvText.trim().split('\n');
-        
-        users = lines.slice(1).map(line => {
-          const values = line.split(',');
-          return {
-            email: values[0],
-            password: values[1],
-            name: values[2],
-            initials: values[3],
-            createdAt: values[4]
-          };
-        });
-        
-        // Save to localStorage for persistence
-        localStorage.setItem('allUsers', JSON.stringify(users));
-      }
-
       if (isSignUp) {
         // Sign up - check if user already exists
-        const existingUser = users.find(u => u.email === email);
+        const { data: existingUser } = await supabase
+          .from('users')
+          .select('email')
+          .eq('email', email)
+          .single();
+
         if (existingUser) {
           setError('Email already exists');
           setLoading(false);
@@ -52,32 +31,52 @@ const Login = ({ onLogin }) => {
 
         // Create new user
         const initials = name.split(' ').map(n => n[0]).join('').toUpperCase() || 'U';
-        const newUser = {
-          email,
-          password,
-          name,
-          initials,
-          createdAt: new Date().toISOString()
-        };
+        const { data: newUser, error: insertError } = await supabase
+          .from('users')
+          .insert({
+            email,
+            password,
+            name,
+            initials,
+            role: 'user'
+          })
+          .select()
+          .single();
 
-        // Add to users array and save back to localStorage
-        users.push(newUser);
-        localStorage.setItem('allUsers', JSON.stringify(users));
+        if (insertError) {
+          setError('Failed to create account. Please try again.');
+          setLoading(false);
+          return;
+        }
+
         localStorage.setItem('currentUser', JSON.stringify(newUser));
         onLogin(newUser);
       } else {
         // Login - verify credentials
-        const user = users.find(u => u.email === email && u.password === password);
-        if (!user) {
+        const { data: user, error: fetchError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('email', email)
+          .eq('password', password)
+          .single();
+
+        if (fetchError || !user) {
           setError('Invalid email or password');
           setLoading(false);
           return;
         }
 
+        // Update last login
+        await supabase
+          .from('users')
+          .update({ last_login: new Date().toISOString() })
+          .eq('id', user.id);
+
         localStorage.setItem('currentUser', JSON.stringify(user));
         onLogin(user);
       }
     } catch (err) {
+      console.error('Login error:', err);
       setError('An error occurred. Please try again.');
       setLoading(false);
     }
