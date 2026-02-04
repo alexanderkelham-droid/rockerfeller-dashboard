@@ -329,18 +329,7 @@ const MapView = ({ userEmail }) => {
 
   const loadGlobalPlants = useCallback(async (callback) => {
     try {
-      // Load from Supabase instead of xlsx file
-      const { data, error } = await supabase
-        .from('global_coal_plants')
-        .select('*')
-        .eq('status', 'operating');
-      
-      if (error) throw error;
-      
-      console.log(`Global plants query returned ${data?.length || 0} operating plants`);
-      console.log(`Impact results available: ${impactResults.length}`);
-      
-      // Create a Set of plant names that have impact results (normalize to lowercase)
+      // Get the list of plant names from impact results first
       const impactPlantNames = new Set(
         impactResults
           .map(result => result['Unique plant name']?.toLowerCase()?.trim())
@@ -352,10 +341,47 @@ const MapView = ({ userEmail }) => {
         console.log('Sample impact plant names:', Array.from(impactPlantNames).slice(0, 5));
       }
       
+      if (impactPlantNames.size === 0) {
+        console.log('No impact plant names to match against');
+        setGlobalPlants([]);
+        if (callback) callback([]);
+        return;
+      }
+      
+      // Build OR filter for plant names that match impact results
+      const plantNamesList = Array.from(impactPlantNames);
+      
+      // Query in batches since we can't do a big IN query easily
+      // Instead, fetch all operating plants and filter client-side (with higher limit)
+      let allData = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+      
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('global_coal_plants')
+          .select('*')
+          .eq('status', 'operating')
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+        
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          allData = allData.concat(data);
+          page++;
+          hasMore = data.length === pageSize;
+        } else {
+          hasMore = false;
+        }
+      }
+      
+      console.log(`Global plants query returned ${allData.length} total operating plants`);
+      console.log(`Impact results available: ${impactResults.length}`);
+      
       // Debug: check first few global plant names and if they match
-      const sampleGlobalPlants = data.slice(0, 5).map(p => p.plant_name?.toLowerCase()?.trim());
+      const sampleGlobalPlants = allData.slice(0, 10).map(p => p.plant_name?.toLowerCase()?.trim());
       console.log('Sample global plant names:', sampleGlobalPlants);
-      console.log('Checking matches:', sampleGlobalPlants.map(name => ({ name, inImpact: impactPlantNames.has(name) })));
       
       // Group by unique plant (not by unit) and store unit details
       const uniquePlants = new Map();
@@ -365,7 +391,7 @@ const MapView = ({ userEmail }) => {
       let skippedNoCoords = 0;
       let skippedNoMatch = 0;
       
-      data.forEach(plant => {
+      allData.forEach(plant => {
         if (!plant.latitude || !plant.longitude) {
           skippedNoCoords++;
           return;
