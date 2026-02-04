@@ -329,14 +329,13 @@ const MapView = ({ userEmail }) => {
 
   const loadGlobalPlants = async (callback) => {
     try {
-      const XLSX = await import('xlsx');
-      const response = await fetch('/src/data/global_coal_plants.xlsx');
-      const arrayBuffer = await response.arrayBuffer();
-      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      // Load from Supabase instead of xlsx file
+      const { data, error } = await supabase
+        .from('global_coal_plants')
+        .select('*')
+        .eq('status', 'operating');
       
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const data = XLSX.utils.sheet_to_json(worksheet);
+      if (error) throw error;
       
       // Create a Set of plant names that have impact results (normalize to lowercase)
       const impactPlantNames = new Set(
@@ -352,22 +351,21 @@ const MapView = ({ userEmail }) => {
       const plantUnitsMap = new Map(); // Store unit details for each plant
       
       data.forEach(plant => {
-        if (!plant.Latitude || !plant.Longitude) return;
-        if (plant['Status']?.toLowerCase() !== 'operating') return;
+        if (!plant.latitude || !plant.longitude) return;
         
         // Only include plants that have impact results (match by plant name)
-        const plantName = plant['Plant name']?.toLowerCase()?.trim();
+        const plantName = plant.plant_name?.toLowerCase()?.trim();
         if (!plantName || !impactPlantNames.has(plantName)) return;
         
-        const plantKey = `${plant['Plant name']}_${plant.Latitude}_${plant.Longitude}`;
+        const plantKey = `${plant.plant_name}_${plant.latitude}_${plant.longitude}`;
         
         // Store unit details
         if (!plantUnitsMap.has(plantKey)) {
           plantUnitsMap.set(plantKey, []);
         }
         plantUnitsMap.get(plantKey).push({
-          unitName: plant['Unit name'],
-          capacity: parseFloat(plant['Capacity (MW)']) || 0
+          unitName: plant.unit_name,
+          capacity: parseFloat(plant.capacity_mw) || 0
         });
         
         // If we haven't seen this plant yet, or if this unit has higher capacity, use it
@@ -375,13 +373,13 @@ const MapView = ({ userEmail }) => {
           uniquePlants.set(plantKey, { ...plant, unitDetails: [] });
         } else {
           const existing = uniquePlants.get(plantKey);
-          const currentCapacity = parseFloat(plant['Capacity (MW)']) || 0;
-          const existingCapacity = parseFloat(existing['Capacity (MW)']) || 0;
+          const currentCapacity = parseFloat(plant.capacity_mw) || 0;
+          const existingCapacity = parseFloat(existing.capacity_mw) || 0;
           
           // Sum up capacities for the same plant
           uniquePlants.set(plantKey, {
             ...existing,
-            'Capacity (MW)': existingCapacity + currentCapacity,
+            capacity_mw: existingCapacity + currentCapacity,
           });
         }
       });
@@ -393,24 +391,24 @@ const MapView = ({ userEmail }) => {
       
       // Convert to array and process
       const processedGlobal = Array.from(uniquePlants.values()).map(plant => ({
-        'No': `GLOBAL-${plant['GEM location ID'] || Math.random()}`,
-        'Plant Name': plant['Plant name'] || 'Unknown',
+        'No': `GLOBAL-${plant.gem_location_id || Math.random()}`,
+        'Plant Name': plant.plant_name || 'Unknown',
         'Unit name': 'Combined Units',
-        'Capacity (MW)': plant['Capacity (MW)'] || 0,
-        'Country': plant['Country/Area'] || '',
+        'Capacity (MW)': plant.capacity_mw || 0,
+        'Country': plant.country_area || '',
         'Operational Status': 'Operating',
-        'Start year': plant['Start year'] || '',
-        'Planned retirement year': plant['Planned retirement'] || '',
-        'Location (coordinates)': `${plant.Latitude}, ${plant.Longitude}`,
-        'Operator': plant['Owner'] || '',
-        'Owner': plant['Owner'] || '',
-        'Parent': plant['Parent'] || '',
+        'Start year': plant.start_year || '',
+        'Planned retirement year': plant.planned_retirement || '',
+        'Location (coordinates)': `${plant.latitude}, ${plant.longitude}`,
+        'Operator': plant.owner || '',
+        'Owner': plant.owner || '',
+        'Parent': plant.parent || '',
         'Transition type': '',
         'Financial mechanism': '',
         'Information Status': 'Global Database',
         'Email extension': '',
-        latitude: parseFloat(plant.Latitude),
-        longitude: parseFloat(plant.Longitude),
+        latitude: parseFloat(plant.latitude),
+        longitude: parseFloat(plant.longitude),
         isGlobal: true,
         unitDetails: plant.unitDetails || [], // Include unit details!
       }));
@@ -969,7 +967,7 @@ const MapView = ({ userEmail }) => {
 
       {/* Pipeline Table - Bottom panel for curated plants */}
       {selectedPlantProjects.length > 0 && (
-        <div className="absolute bottom-10 left-1/2 transform -translate-x-1/2 bg-white shadow-2xl rounded-lg z-10" style={{ height: `${panelHeight}vh`, width: 'calc(100% - 80px)', maxWidth: '1400px' }}>
+        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white shadow-2xl rounded-lg z-20" style={{ height: `${panelHeight}vh`, width: 'calc(100% - 80px)', maxWidth: '1400px' }}>
           {/* Drag handle */}
           <div 
             onMouseDown={handleDragStart}
