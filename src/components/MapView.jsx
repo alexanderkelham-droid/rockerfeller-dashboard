@@ -352,16 +352,33 @@ const MapView = ({ userEmail }) => {
         console.log('Sample impact plant names:', Array.from(impactPlantNames).slice(0, 5));
       }
       
+      // Debug: check first few global plant names and if they match
+      const sampleGlobalPlants = data.slice(0, 5).map(p => p.plant_name?.toLowerCase()?.trim());
+      console.log('Sample global plant names:', sampleGlobalPlants);
+      console.log('Checking matches:', sampleGlobalPlants.map(name => ({ name, inImpact: impactPlantNames.has(name) })));
+      
       // Group by unique plant (not by unit) and store unit details
       const uniquePlants = new Map();
       const plantUnitsMap = new Map(); // Store unit details for each plant
       
+      let matchedCount = 0;
+      let skippedNoCoords = 0;
+      let skippedNoMatch = 0;
+      
       data.forEach(plant => {
-        if (!plant.latitude || !plant.longitude) return;
+        if (!plant.latitude || !plant.longitude) {
+          skippedNoCoords++;
+          return;
+        }
         
         // Only include plants that have impact results (match by plant name)
         const plantName = plant.plant_name?.toLowerCase()?.trim();
-        if (!plantName || !impactPlantNames.has(plantName)) return;
+        if (!plantName || !impactPlantNames.has(plantName)) {
+          skippedNoMatch++;
+          return;
+        }
+        
+        matchedCount++;
         
         const plantKey = `${plant.plant_name}_${plant.latitude}_${plant.longitude}`;
         
@@ -389,6 +406,8 @@ const MapView = ({ userEmail }) => {
           });
         }
       });
+      
+      console.log(`Match stats: ${matchedCount} matched, ${skippedNoCoords} skipped (no coords), ${skippedNoMatch} skipped (no match)`);
       
       // Attach unit details to each plant
       uniquePlants.forEach((plant, key) => {
