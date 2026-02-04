@@ -67,10 +67,10 @@ const MapView = ({ userEmail }) => {
   const [showAllGlobalPlants, setShowAllGlobalPlants] = useState(false);
   const [globalPlants, setGlobalPlants] = useState([]);
   const [filteredGlobalPlants, setFilteredGlobalPlants] = useState([]);
-  const [panelHeight, setPanelHeight] = useState(40); // Panel height in vh
+  const [panelHeight, setPanelHeight] = useState(35); // Panel height in vh (35% of viewport height)
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartY, setDragStartY] = useState(0);
-  const [dragStartHeight, setDragStartHeight] = useState(40);
+  const [dragStartHeight, setDragStartHeight] = useState(35);
   const [impactResults, setImpactResults] = useState([]); // Store impact results data
   const [selectedUnit, setSelectedUnit] = useState('all'); // Track which unit is selected in the popup
   const [selectedProjectForDetail, setSelectedProjectForDetail] = useState(null); // Track which project is opened in detail modal
@@ -1018,7 +1018,7 @@ const MapView = ({ userEmail }) => {
 
       {/* Pipeline Table - Bottom panel for curated plants */}
       {selectedPlantProjects.length > 0 && (
-        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-white shadow-2xl rounded-lg z-50" style={{ height: `${panelHeight}vh`, width: 'calc(100% - 80px)', maxWidth: '1400px' }}>
+        <div className="fixed left-1/2 bg-white shadow-2xl rounded-lg z-50" style={{ bottom: '16px', height: `${panelHeight}vh`, width: 'calc(100% - 80px)', maxWidth: '1400px', transform: 'translateX(-50%)' }}>
           {/* Drag handle */}
           <div 
             onMouseDown={handleDragStart}
@@ -1045,7 +1045,7 @@ const MapView = ({ userEmail }) => {
                 // Close the panel and reset height
                 setSelectedPlantProjects([]);
                 setSelectedPlant(null);
-                setPanelHeight(40);
+                setPanelHeight(35);
               }}
               className="text-secondary-400 hover:text-secondary-600 text-xl font-bold w-8 h-8 flex items-center justify-center"
             >
