@@ -973,7 +973,7 @@ const MapView = ({ userEmail }) => {
 
       {/* Pipeline Table - Bottom panel for curated plants */}
       {selectedPlantProjects.length > 0 && (
-        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white shadow-2xl rounded-lg z-20" style={{ height: `${panelHeight}vh`, width: 'calc(100% - 80px)', maxWidth: '1400px' }}>
+        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-white shadow-2xl rounded-lg z-50" style={{ height: `${panelHeight}vh`, width: 'calc(100% - 80px)', maxWidth: '1400px' }}>
           {/* Drag handle */}
           <div 
             onMouseDown={handleDragStart}
