@@ -1,7 +1,40 @@
 import React, { useState, useEffect } from 'react';
-import * as XLSX from 'xlsx';
+import { supabase } from '../lib/supabaseClient';
 
-const AddPlantSearch = ({ onAddPlant, onToggleGlobal, showingGlobal, onFilteredPlantsChange }) => {
+// Helper to normalize global_coal_plants from Supabase
+const normalizeGlobalPlant = (row) => ({
+  ...row,
+  'GEM unit/phase ID': row.gem_unit_phase_id,
+  'GEM location ID': row.gem_location_id,
+  'Country/Area': row.country_area,
+  'Wiki URL': row.wiki_url,
+  'Plant name': row.plant_name,
+  'Unit name': row.unit_name,
+  'Plant name (other)': row.plant_name_other,
+  'Plant name (local)': row.plant_name_local,
+  'Owner': row.owner,
+  'Parent': row.parent,
+  'Capacity (MW)': row.capacity_mw,
+  'Status': row.status,
+  'Start year': row.start_year,
+  'Retired year': row.retired_year,
+  'Planned retirement': row.planned_retirement,
+  'Combustion technology': row.combustion_technology,
+  'Coal type': row.coal_type,
+  'Coal source': row.coal_source,
+  'Location': row.location,
+  'Latitude': row.latitude,
+  'Longitude': row.longitude,
+  'Subregion': row.subregion,
+  'Region': row.region,
+  'Plant age (years)': row.plant_age_years,
+  'Capacity factor': row.capacity_factor,
+  'Annual CO2 (million tonnes / annum)': row.annual_co2_million_tonnes_annum,
+  'Remaining plant lifetime (years)': row.remaining_plant_lifetime_years,
+  'Lifetime CO2 (million tonnes)': row.lifetime_co2_million_tonnes,
+});
+
+const AddPlantSearch = ({ onAddPlant, onToggleGlobal, showingGlobal, onFilteredPlantsChange, impactResults = [] }) => {
   const [globalPlants, setGlobalPlants] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -23,29 +56,24 @@ const AddPlantSearch = ({ onAddPlant, onToggleGlobal, showingGlobal, onFilteredP
   const loadGlobalDatabase = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch('/src/data/global_coal_plants.xlsx');
-      const arrayBuffer = await response.arrayBuffer();
-      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-      
-      // Get first sheet
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      
-      // Convert to JSON
-      const data = XLSX.utils.sheet_to_json(worksheet);
-      
+      const { data, error } = await supabase
+        .from('global_coal_plants')
+        .select('*');
+      if (error) {
+        throw error;
+      }
+      // Normalize column names for compatibility
+      const normalizedData = (data || []).map(normalizeGlobalPlant);
       // Calculate actual min/max capacity
-      const capacities = data
+      const capacities = normalizedData
         .map(p => parseFloat(p['Capacity (MW)']) || 0)
         .filter(c => c > 0);
       const actualMin = Math.min(...capacities);
       const actualMax = Math.max(...capacities);
-      
       setMinCapacity(actualMin);
       setMaxCapacity(actualMax);
       setCapacityRange([actualMin, actualMax]);
-      
-      setGlobalPlants(data);
+      setGlobalPlants(normalizedData);
       setIsLoading(false);
     } catch (error) {
       console.error('Error loading global plants database:', error);
@@ -59,13 +87,40 @@ const AddPlantSearch = ({ onAddPlant, onToggleGlobal, showingGlobal, onFilteredP
       selectedCountries, 
       capacityRange, 
       selectedStatus,
-      totalPlants: globalPlants.length 
+      totalPlants: globalPlants.length,
+      impactResultsCount: impactResults.length
     });
+    
+    // Debug: Check what columns are available in impact results
+    if (impactResults.length > 0) {
+      console.log('Impact results columns:', Object.keys(impactResults[0]));
+      console.log('First impact result sample:', impactResults[0]);
+    }
+    
+    // Create a Set of plant names that have impact results (normalize to lowercase)
+    const impactPlantNames = new Set(
+      impactResults
+        .map(result => result['Unique plant name']?.toLowerCase()?.trim())
+        .filter(Boolean)
+    );
+    
+    console.log(`Filtering to ${impactPlantNames.size} unique plants with impact results`);
+    console.log('Sample impact plant names:', Array.from(impactPlantNames).slice(0, 5));
     
     // Apply filters to all global plants
     const filtered = globalPlants.filter(plant => {
       // Must have coordinates
       if (!plant.Latitude || !plant.Longitude) return false;
+      
+      // Debug: Log first plant for comparison
+      if (globalPlants.indexOf(plant) === 0 && impactResults.length > 0) {
+        console.log('First global plant sample:', plant);
+        console.log('Plant name from global:', plant['Plant name']);
+      }
+      
+      // Only include plants that have impact results (match by plant name)
+      const plantName = plant['Plant name']?.toLowerCase()?.trim();
+      if (impactResults.length > 0 && (!plantName || !impactPlantNames.has(plantName))) return false;
       
       // Capacity filter
       const capacity = parseFloat(plant['Capacity (MW)']) || 0;
@@ -86,10 +141,22 @@ const AddPlantSearch = ({ onAddPlant, onToggleGlobal, showingGlobal, onFilteredP
     
     console.log('Filtered plants before dedup:', filtered.length);
     
-    // Deduplicate by plant name and coordinates, sum capacities
+    // Deduplicate by plant name and coordinates, sum capacities and collect unit details
     const uniquePlants = new Map();
+    const plantUnitsMap = new Map(); // Store unit details for each plant
+    
     filtered.forEach(plant => {
       const plantKey = `${plant['Plant name']}_${plant.Latitude}_${plant.Longitude}`;
+      
+      // Store unit details
+      if (!plantUnitsMap.has(plantKey)) {
+        plantUnitsMap.set(plantKey, []);
+      }
+      plantUnitsMap.get(plantKey).push({
+        unitName: plant['Unit name'],
+        capacity: parseFloat(plant['Capacity (MW)']) || 0
+      });
+      
       if (!uniquePlants.has(plantKey)) {
         uniquePlants.set(plantKey, plant);
       } else {
@@ -104,33 +171,37 @@ const AddPlantSearch = ({ onAddPlant, onToggleGlobal, showingGlobal, onFilteredP
     });
     
     // Transform to standard format
-    const processedPlants = Array.from(uniquePlants.values()).map(plant => ({
-      'No': `GLOBAL-${plant['GEM location ID'] || Math.random()}`,
-      'Plant Name': plant['Plant name'] || 'Unknown',
-      'Unit name': 'Combined Units',
-      'Capacity (MW)': plant['Capacity (MW)'] || 0,
-      'Country': plant['Country/Area'] || '',
-      'Operational Status': plant['Status'] || 'Operating',
-      'Start year': plant['Start year'] || '',
-      'Planned retirement year': plant['Planned retirement'] || '',
-      'Location (coordinates)': `${plant.Latitude}, ${plant.Longitude}`,
-      'Operator': plant['Owner'] || '',
-      'Owner': plant['Owner'] || '',
-      'Parent': plant['Parent'] || '',
-      'Transition type': '',
-      'Financial mechanism': '',
-      'Information Status': 'Global Database',
-      'Email extension': '',
-      latitude: parseFloat(plant.Latitude),
-      longitude: parseFloat(plant.Longitude),
-      isGlobal: true,
-    }));
+    const processedPlants = Array.from(uniquePlants.values()).map(plant => {
+      const plantKey = `${plant['Plant name']}_${plant.Latitude}_${plant.Longitude}`;
+      return {
+        'No': `GLOBAL-${plant['GEM location ID'] || Math.random()}`,
+        'Plant Name': plant['Plant name'] || 'Unknown',
+        'Unit name': 'Combined Units',
+        'Capacity (MW)': plant['Capacity (MW)'] || 0,
+        'Country': plant['Country/Area'] || '',
+        'Operational Status': plant['Status'] || 'Operating',
+        'Start year': plant['Start year'] || '',
+        'Planned retirement year': plant['Planned retirement'] || '',
+        'Location (coordinates)': `${plant.Latitude}, ${plant.Longitude}`,
+        'Operator': plant['Owner'] || '',
+        'Owner': plant['Owner'] || '',
+        'Parent': plant['Parent'] || '',
+        'Transition type': '',
+        'Financial mechanism': '',
+        'Information Status': 'Global Database',
+        'Email extension': '',
+        latitude: parseFloat(plant.Latitude),
+        longitude: parseFloat(plant.Longitude),
+        isGlobal: true,
+        unitDetails: plantUnitsMap.get(plantKey) || [], // Include unit details!
+      };
+    });
     
     // Notify parent component
     if (onFilteredPlantsChange) {
       onFilteredPlantsChange(processedPlants);
     }
-  }, [globalPlants, capacityRange, selectedCountries, selectedStatus, onFilteredPlantsChange]);
+  }, [globalPlants, capacityRange, selectedCountries, selectedStatus, onFilteredPlantsChange, impactResults]);
 
   // Separate effect for search results display
   useEffect(() => {
@@ -395,6 +466,17 @@ const AddPlantSearch = ({ onAddPlant, onToggleGlobal, showingGlobal, onFilteredP
           </svg>
           {showingGlobal ? 'Hide Global Plants' : 'Show Global Plants'}
         </button>
+        
+        {/* Plant count display */}
+        {impactResults.length > 0 && (
+          <div className="mt-2 px-3 py-2 bg-cyan-50 border border-cyan-100 rounded-lg">
+            <p className="text-xs text-gray-600 text-center">
+              <span className="font-semibold text-cyan-700">{
+                new Set(impactResults.map(r => r['Unique plant name']?.toLowerCase()?.trim()).filter(Boolean)).size
+              }</span> plants with impact data available
+            </p>
+          </div>
+        )}
 
         {isOpen && filteredPlants.length > 0 && (
           <div className="mt-2 max-h-96 overflow-y-auto border border-secondary-200 rounded-md">
@@ -455,10 +537,6 @@ const AddPlantSearch = ({ onAddPlant, onToggleGlobal, showingGlobal, onFilteredP
             No plants found matching "{searchTerm}"
           </div>
         )}
-
-        <p className="text-xs text-secondary-400 mt-2">
-          {globalPlants.length} plants in global database
-        </p>
       </div>
     </div>
   );
