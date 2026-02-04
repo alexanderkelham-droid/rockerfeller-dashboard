@@ -327,7 +327,7 @@ const MapView = ({ userEmail }) => {
     }
   }, [filteredGlobalPlants, showAllGlobalPlants]);
 
-  const loadGlobalPlants = async (callback) => {
+  const loadGlobalPlants = useCallback(async (callback) => {
     try {
       // Load from Supabase instead of xlsx file
       const { data, error } = await supabase
@@ -337,6 +337,9 @@ const MapView = ({ userEmail }) => {
       
       if (error) throw error;
       
+      console.log(`Global plants query returned ${data?.length || 0} operating plants`);
+      console.log(`Impact results available: ${impactResults.length}`);
+      
       // Create a Set of plant names that have impact results (normalize to lowercase)
       const impactPlantNames = new Set(
         impactResults
@@ -345,6 +348,9 @@ const MapView = ({ userEmail }) => {
       );
       
       console.log(`Filtering to ${impactPlantNames.size} unique plants with impact results`);
+      if (impactPlantNames.size > 0) {
+        console.log('Sample impact plant names:', Array.from(impactPlantNames).slice(0, 5));
+      }
       
       // Group by unique plant (not by unit) and store unit details
       const uniquePlants = new Map();
@@ -420,7 +426,7 @@ const MapView = ({ userEmail }) => {
     } catch (error) {
       console.error('Error loading global plants:', error);
     }
-  };
+  }, [impactResults]);
 
   const toggleGlobalPlants = () => {
     if (!showAllGlobalPlants) {
