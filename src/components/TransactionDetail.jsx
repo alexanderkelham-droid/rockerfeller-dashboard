@@ -142,10 +142,11 @@ const TransactionDetail = ({
         .from('global_coal_plants')
         .select('*')
         .or(`plant.ilike.%${query}%,unit.ilike.%${query}%`)
-        .eq('status', 'operating')
         .limit(20);
 
-      if (!error && data) {
+      if (error) {
+        console.error('Supabase error:', error);
+      } else if (data) {
         setPlantSearchResults(data);
       }
     } catch (error) {
