@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
 // Transaction stage definitions
@@ -89,6 +89,13 @@ const TransactionDetail = ({
   const [newNextStep, setNewNextStep] = useState('');
   const [showActivityForm, setShowActivityForm] = useState(false);
   const [newActivity, setNewActivity] = useState({ type: 'note', title: '', description: '' });
+  
+  // Plant search state
+  const [plantSearchQuery, setPlantSearchQuery] = useState('');
+  const [plantSearchResults, setPlantSearchResults] = useState([]);
+  const [isSearchingPlants, setIsSearchingPlants] = useState(false);
+  const [showPlantDropdown, setShowPlantDropdown] = useState(false);
+  const plantSearchRef = useRef(null);
 
   // Load transaction data and activities
   useEffect(() => {
@@ -98,6 +105,7 @@ const TransactionDetail = ({
         deal_timeframe: transaction.deal_timeframe ? transaction.deal_timeframe.split('T')[0] : '',
         funded_delivery_partners: transaction.funded_delivery_partners || [],
       });
+      setPlantSearchQuery(transaction.plant_name || '');
       try {
         const steps = transaction.transaction_next_steps 
           ? JSON.parse(transaction.transaction_next_steps) 
@@ -109,6 +117,71 @@ const TransactionDetail = ({
       fetchActivities(transaction.id);
     }
   }, [transaction]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (plantSearchRef.current && !plantSearchRef.current.contains(event.target)) {
+        setShowPlantDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Search plants in database
+  const searchPlants = async (query) => {
+    if (!query || query.length < 2) {
+      setPlantSearchResults([]);
+      return;
+    }
+
+    setIsSearchingPlants(true);
+    try {
+      const { data, error } = await supabase
+        .from('global_coal_plants')
+        .select('*')
+        .or(`plant.ilike.%${query}%,unit.ilike.%${query}%`)
+        .eq('status', 'operating')
+        .limit(20);
+
+      if (!error && data) {
+        setPlantSearchResults(data);
+      }
+    } catch (error) {
+      console.error('Error searching plants:', error);
+    } finally {
+      setIsSearchingPlants(false);
+    }
+  };
+
+  // Debounced plant search
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (plantSearchQuery && showPlantDropdown) {
+        searchPlants(plantSearchQuery);
+      }
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [plantSearchQuery, showPlantDropdown]);
+
+  // Handle plant selection from search
+  const handleSelectPlant = (plant) => {
+    setFormData(prev => ({
+      ...prev,
+      plant_name: plant.plant || '',
+      unit_name: plant.unit || '',
+      capacity_mw: plant.capacity_mw || '',
+      country: plant.country || '',
+      location_coordinates: plant.latitude && plant.longitude ? `${plant.latitude}, ${plant.longitude}` : '',
+      owner: plant.owner || '',
+      start_year: plant.start_year || '',
+      operational_status: plant.status || 'operating',
+    }));
+    setPlantSearchQuery(plant.plant || '');
+    setShowPlantDropdown(false);
+    setPlantSearchResults([]);
+  };
 
   const fetchActivities = async (transactionId) => {
     if (!transactionId) return;
@@ -139,7 +212,6 @@ const TransactionDetail = ({
     const oldStage = formData.transaction_stage;
     setFormData(prev => ({ ...prev, transaction_stage: stageId }));
     
-    // Log stage change activity
     if (transaction?.id && oldStage !== stageId) {
       await addActivity({
         type: 'stage_change',
@@ -252,15 +324,11 @@ const TransactionDetail = ({
     }
   };
 
-  // Get current stage index
   const currentStageIndex = TRANSACTION_STAGES.findIndex(s => s.id === formData.transaction_stage);
-
-  // Calculate days active
   const daysActive = transaction?.created_at 
     ? Math.floor((new Date() - new Date(transaction.created_at)) / (1000 * 60 * 60 * 24))
     : 0;
 
-  // Activity type icons
   const getActivityIcon = (type) => {
     switch (type) {
       case 'note':
@@ -503,17 +571,57 @@ const TransactionDetail = ({
                   placeholder="Enter project name..."
                 />
               </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Plant Name <span className="text-red-500">*</span></label>
-                <input
-                  type="text"
-                  name="plant_name"
-                  value={formData.plant_name || ''}
-                  onChange={handleChange}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                />
+              
+              {/* Plant Name with Search */}
+              <div ref={plantSearchRef} className="relative">
+                <label className="block text-xs text-gray-500 mb-1">
+                  Plant Name <span className="text-red-500">*</span>
+                  <span className="text-gray-400 ml-1">(Search database)</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={plantSearchQuery}
+                    onChange={(e) => {
+                      setPlantSearchQuery(e.target.value);
+                      setFormData(prev => ({ ...prev, plant_name: e.target.value }));
+                      setShowPlantDropdown(true);
+                    }}
+                    onFocus={() => setShowPlantDropdown(true)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    placeholder="Type to search plants..."
+                  />
+                  {isSearchingPlants && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-600 border-t-transparent"></div>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Search Results Dropdown */}
+                {showPlantDropdown && plantSearchResults.length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                    <div className="p-2 text-xs text-gray-500 border-b border-gray-100 bg-gray-50">
+                      {plantSearchResults.length} plants found - click to populate details
+                    </div>
+                    {plantSearchResults.map((plant, index) => (
+                      <button
+                        key={`${plant.plant}-${plant.unit}-${index}`}
+                        onClick={() => handleSelectPlant(plant)}
+                        className="w-full px-3 py-2 text-left hover:bg-primary-50 border-b border-gray-50 last:border-b-0"
+                      >
+                        <div className="font-medium text-gray-900 text-sm">{plant.plant}</div>
+                        <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
+                          {plant.unit && <span>Unit: {plant.unit}</span>}
+                          {plant.country && <span>• {plant.country}</span>}
+                          {plant.capacity_mw && <span>• {plant.capacity_mw} MW</span>}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
+
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Country</label>
                 <select
@@ -600,10 +708,56 @@ const TransactionDetail = ({
           {activeTab === 'plant' && (
             <div className="space-y-4">
               <h3 className="font-semibold text-gray-900 border-b pb-2">Coal Plant Characteristics</h3>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Plant Name <span className="text-red-500">*</span></label>
-                <input type="text" name="plant_name" value={formData.plant_name || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+              
+              {/* Plant Search in Plant Details tab too */}
+              <div ref={plantSearchRef} className="relative">
+                <label className="block text-xs text-gray-500 mb-1">
+                  Plant Name <span className="text-red-500">*</span>
+                  <span className="text-gray-400 ml-1">(Search database)</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={plantSearchQuery}
+                    onChange={(e) => {
+                      setPlantSearchQuery(e.target.value);
+                      setFormData(prev => ({ ...prev, plant_name: e.target.value }));
+                      setShowPlantDropdown(true);
+                    }}
+                    onFocus={() => setShowPlantDropdown(true)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    placeholder="Type to search plants..."
+                  />
+                  {isSearchingPlants && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-600 border-t-transparent"></div>
+                    </div>
+                  )}
+                </div>
+                
+                {showPlantDropdown && plantSearchResults.length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                    <div className="p-2 text-xs text-gray-500 border-b border-gray-100 bg-gray-50">
+                      {plantSearchResults.length} plants found - click to populate details
+                    </div>
+                    {plantSearchResults.map((plant, index) => (
+                      <button
+                        key={`${plant.plant}-${plant.unit}-${index}`}
+                        onClick={() => handleSelectPlant(plant)}
+                        className="w-full px-3 py-2 text-left hover:bg-primary-50 border-b border-gray-50 last:border-b-0"
+                      >
+                        <div className="font-medium text-gray-900 text-sm">{plant.plant}</div>
+                        <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
+                          {plant.unit && <span>Unit: {plant.unit}</span>}
+                          {plant.country && <span>• {plant.country}</span>}
+                          {plant.capacity_mw && <span>• {plant.capacity_mw} MW</span>}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
+
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Unit Name</label>
                 <input type="text" name="unit_name" value={formData.unit_name || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
