@@ -3,6 +3,7 @@ import Header from './components/Header'
 import MapView from './components/MapView'
 import DataView from './components/DataView'
 import ImpactCalculator from './components/ImpactCalculator'
+import CRMView from './components/CRMView'
 import Login from './components/Login'
 import './App.css'
 
@@ -55,6 +56,7 @@ function App() {
       <main className="pt-16">
         {activeView === 'dashboard' && <MapView userEmail={user?.email} />}
         {activeView === 'data' && <DataView userEmail={user?.email} />}
+        {activeView === 'pipeline' && <CRMView userEmail={user?.email} />}
         {activeView === 'impact' && <ImpactCalculator />}
       </main>
     </div>
