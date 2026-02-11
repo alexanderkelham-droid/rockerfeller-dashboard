@@ -141,7 +141,7 @@ const TransactionDetail = ({
       const { data, error } = await supabase
         .from('global_coal_plants')
         .select('*')
-        .or(`plant.ilike.%${query}%,unit.ilike.%${query}%`)
+        .or(`plant_name.ilike.%${query}%,unit_name.ilike.%${query}%`)
         .limit(20);
 
       if (error) {
@@ -170,16 +170,16 @@ const TransactionDetail = ({
   const handleSelectPlant = (plant) => {
     setFormData(prev => ({
       ...prev,
-      plant_name: plant.plant || '',
-      unit_name: plant.unit || '',
+      plant_name: plant.plant_name || '',
+      unit_name: plant.unit_name || '',
       capacity_mw: plant.capacity_mw || '',
-      country: plant.country || '',
+      country: plant.country_area || '',
       location_coordinates: plant.latitude && plant.longitude ? `${plant.latitude}, ${plant.longitude}` : '',
       owner: plant.owner || '',
       start_year: plant.start_year || '',
       operational_status: plant.status || 'operating',
     }));
-    setPlantSearchQuery(plant.plant || '');
+    setPlantSearchQuery(plant.plant_name || '');
     setShowPlantDropdown(false);
     setPlantSearchResults([]);
   };
@@ -607,14 +607,14 @@ const TransactionDetail = ({
                     </div>
                     {plantSearchResults.map((plant, index) => (
                       <button
-                        key={`${plant.plant}-${plant.unit}-${index}`}
+                        key={`${plant.plant_name}-${plant.unit_name}-${index}`}
                         onClick={() => handleSelectPlant(plant)}
                         className="w-full px-3 py-2 text-left hover:bg-primary-50 border-b border-gray-50 last:border-b-0"
                       >
-                        <div className="font-medium text-gray-900 text-sm">{plant.plant}</div>
+                        <div className="font-medium text-gray-900 text-sm">{plant.plant_name}</div>
                         <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
-                          {plant.unit && <span>Unit: {plant.unit}</span>}
-                          {plant.country && <span>• {plant.country}</span>}
+                          {plant.unit_name && <span>Unit: {plant.unit_name}</span>}
+                          {plant.country_area && <span>• {plant.country_area}</span>}
                           {plant.capacity_mw && <span>• {plant.capacity_mw} MW</span>}
                         </div>
                       </button>
@@ -743,14 +743,14 @@ const TransactionDetail = ({
                     </div>
                     {plantSearchResults.map((plant, index) => (
                       <button
-                        key={`${plant.plant}-${plant.unit}-${index}`}
+                        key={`${plant.plant_name}-${plant.unit_name}-${index}`}
                         onClick={() => handleSelectPlant(plant)}
                         className="w-full px-3 py-2 text-left hover:bg-primary-50 border-b border-gray-50 last:border-b-0"
                       >
-                        <div className="font-medium text-gray-900 text-sm">{plant.plant}</div>
+                        <div className="font-medium text-gray-900 text-sm">{plant.plant_name}</div>
                         <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
-                          {plant.unit && <span>Unit: {plant.unit}</span>}
-                          {plant.country && <span>• {plant.country}</span>}
+                          {plant.unit_name && <span>Unit: {plant.unit_name}</span>}
+                          {plant.country_area && <span>• {plant.country_area}</span>}
                           {plant.capacity_mw && <span>• {plant.capacity_mw} MW</span>}
                         </div>
                       </button>
