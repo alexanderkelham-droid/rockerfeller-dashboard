@@ -1,16 +1,49 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabaseClient';
+
+// Transaction stage definitions
+const TRANSACTION_STAGES = [
+  { id: 'origination', label: 'Origination' },
+  { id: 'scoping', label: 'Scoping' },
+  { id: 'concept_note', label: 'Concept Note' },
+  { id: 'agreement_signed', label: 'Agreement Signed' },
+  { id: 'in_delivery', label: 'In Delivery' },
+  { id: 'transaction_complete', label: 'Complete' },
+];
+
+// RAG status colors
+const RAG_COLORS = {
+  green: { bg: 'bg-emerald-500', text: 'text-emerald-700', label: 'On Track' },
+  amber: { bg: 'bg-amber-500', text: 'text-amber-700', label: 'At Risk' },
+  red: { bg: 'bg-red-500', text: 'text-red-700', label: 'Blocked' },
+};
+
+// Country list
+const COUNTRIES = [
+  'Afghanistan', 'Albania', 'Algeria', 'Argentina', 'Australia', 'Austria', 'Bangladesh', 'Belgium', 
+  'Bosnia and Herzegovina', 'Botswana', 'Brazil', 'Bulgaria', 'Cambodia', 'Canada', 'Chile', 'China', 
+  'Colombia', 'Croatia', 'Czech Republic', 'Denmark', 'Dominican Republic', 'Ecuador', 'Egypt', 
+  'El Salvador', 'Estonia', 'Ethiopia', 'Finland', 'France', 'Germany', 'Ghana', 'Greece', 'Guatemala', 
+  'Honduras', 'Hungary', 'India', 'Indonesia', 'Iran', 'Iraq', 'Ireland', 'Israel', 'Italy', 'Japan', 
+  'Jordan', 'Kazakhstan', 'Kenya', 'Kosovo', 'Laos', 'Latvia', 'Lebanon', 'Lithuania', 'Madagascar', 
+  'Malaysia', 'Mexico', 'Mongolia', 'Montenegro', 'Morocco', 'Mozambique', 'Myanmar', 'Nepal', 
+  'Netherlands', 'New Zealand', 'Nigeria', 'North Korea', 'North Macedonia', 'Norway', 'Pakistan', 
+  'Panama', 'Peru', 'Philippines', 'Poland', 'Portugal', 'Romania', 'Russia', 'Saudi Arabia', 'Senegal', 
+  'Serbia', 'Singapore', 'Slovakia', 'Slovenia', 'South Africa', 'South Korea', 'Spain', 'Sri Lanka', 
+  'Sweden', 'Taiwan', 'Tanzania', 'Thailand', 'Tunisia', 'Turkey', 'Ukraine', 'United Arab Emirates', 
+  'United Kingdom', 'United States', 'Uzbekistan', 'Venezuela', 'Vietnam', 'Zambia', 'Zimbabwe'
+];
+
+const DELIVERY_PARTNERS = ['CSV', 'RMI', 'CT', 'CCSF', 'World Bank', 'ADB', 'IADB'];
 
 const TransactionDetail = ({ 
   transaction, 
   onSave, 
   onDelete, 
-  onClose, 
-  countries, 
-  deliveryPartners,
-  stages 
+  onClose,
+  userEmail 
 }) => {
   const [formData, setFormData] = useState({
-    // Coal Plant Characteristics
     plant_name: '',
     unit_name: '',
     capacity_mw: '',
@@ -24,16 +57,12 @@ const TransactionDetail = ({
     lifetime_nox_tonnes: '',
     lifetime_co2_tonnes: '',
     grid_connection_type: '',
-    
-    // CATA Project Characteristics
     project_value: '',
     project_stage: 'concept_proposal',
     key_contacts: '',
     project_name: '',
     planned_retirement_year: '',
     actual_retirement_year: '',
-    
-    // Transaction Data
     transition_type: '',
     transaction_stage: 'origination',
     transaction_status: '',
@@ -44,24 +73,24 @@ const TransactionDetail = ({
     financial_mechanism: '',
     lenders_funders: '',
     planned_post_retirement_status: '',
-    
-    // Key Features
     actors_in_contact: '',
     funded_delivery_partners: [],
     related_work_link: '',
     assumptions_confidence_rating: '',
-    
-    // Additional
     notes: '',
     assigned_to: '',
   });
 
-  const [activeTab, setActiveTab] = useState('plant');
+  const [activeTab, setActiveTab] = useState('summary');
+  const [activities, setActivities] = useState([]);
+  const [newNote, setNewNote] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const [nextSteps, setNextSteps] = useState([]);
   const [newNextStep, setNewNextStep] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
+  const [showActivityForm, setShowActivityForm] = useState(false);
+  const [newActivity, setNewActivity] = useState({ type: 'note', title: '', description: '' });
 
-  // Load transaction data if editing
+  // Load transaction data and activities
   useEffect(() => {
     if (transaction) {
       setFormData({
@@ -69,7 +98,6 @@ const TransactionDetail = ({
         deal_timeframe: transaction.deal_timeframe ? transaction.deal_timeframe.split('T')[0] : '',
         funded_delivery_partners: transaction.funded_delivery_partners || [],
       });
-      // Parse next steps from JSON
       try {
         const steps = transaction.transaction_next_steps 
           ? JSON.parse(transaction.transaction_next_steps) 
@@ -78,8 +106,26 @@ const TransactionDetail = ({
       } catch {
         setNextSteps([]);
       }
+      fetchActivities(transaction.id);
     }
   }, [transaction]);
+
+  const fetchActivities = async (transactionId) => {
+    if (!transactionId) return;
+    try {
+      const { data, error } = await supabase
+        .from('transaction_activities')
+        .select('*')
+        .eq('transaction_id', transactionId)
+        .order('created_at', { ascending: false });
+      
+      if (!error && data) {
+        setActivities(data);
+      }
+    } catch (error) {
+      console.error('Error fetching activities:', error);
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value, type } = e.target;
@@ -89,6 +135,20 @@ const TransactionDetail = ({
     }));
   };
 
+  const handleStageClick = async (stageId) => {
+    const oldStage = formData.transaction_stage;
+    setFormData(prev => ({ ...prev, transaction_stage: stageId }));
+    
+    // Log stage change activity
+    if (transaction?.id && oldStage !== stageId) {
+      await addActivity({
+        type: 'stage_change',
+        title: 'Stage Changed',
+        description: `Stage changed from "${TRANSACTION_STAGES.find(s => s.id === oldStage)?.label || oldStage}" to "${TRANSACTION_STAGES.find(s => s.id === stageId)?.label}"`,
+      });
+    }
+  };
+
   const handlePartnerToggle = (partner) => {
     setFormData(prev => ({
       ...prev,
@@ -96,6 +156,53 @@ const TransactionDetail = ({
         ? prev.funded_delivery_partners.filter(p => p !== partner)
         : [...prev.funded_delivery_partners, partner]
     }));
+  };
+
+  const addActivity = async (activityData) => {
+    if (!transaction?.id) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('transaction_activities')
+        .insert([{
+          transaction_id: transaction.id,
+          created_by: userEmail,
+          activity_type: activityData.type,
+          title: activityData.title,
+          description: activityData.description,
+          metadata: activityData.metadata || {},
+        }])
+        .select();
+      
+      if (!error && data) {
+        setActivities(prev => [data[0], ...prev]);
+      }
+    } catch (error) {
+      console.error('Error adding activity:', error);
+    }
+  };
+
+  const handleAddNote = async () => {
+    if (!newNote.trim()) return;
+    
+    await addActivity({
+      type: 'note',
+      title: 'Note Added',
+      description: newNote.trim(),
+    });
+    setNewNote('');
+  };
+
+  const handleAddActivity = async () => {
+    if (!newActivity.title.trim()) return;
+    
+    await addActivity({
+      type: newActivity.type,
+      title: newActivity.title,
+      description: newActivity.description,
+    });
+    setNewActivity({ type: 'note', title: '', description: '' });
+    setShowActivityForm(false);
   };
 
   const handleAddNextStep = () => {
@@ -115,16 +222,13 @@ const TransactionDetail = ({
     setNextSteps(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
     setIsSaving(true);
     
     try {
-      // Prepare data for save
       const dataToSave = {
         ...formData,
         transaction_next_steps: JSON.stringify(nextSteps),
-        // Convert empty strings to null for numeric fields
         capacity_mw: formData.capacity_mw === '' ? null : formData.capacity_mw,
         start_year: formData.start_year === '' ? null : formData.start_year,
         original_end_of_life_year: formData.original_end_of_life_year === '' ? null : formData.original_end_of_life_year,
@@ -148,321 +252,466 @@ const TransactionDetail = ({
     }
   };
 
+  // Get current stage index
+  const currentStageIndex = TRANSACTION_STAGES.findIndex(s => s.id === formData.transaction_stage);
+
+  // Calculate days active
+  const daysActive = transaction?.created_at 
+    ? Math.floor((new Date() - new Date(transaction.created_at)) / (1000 * 60 * 60 * 24))
+    : 0;
+
+  // Activity type icons
+  const getActivityIcon = (type) => {
+    switch (type) {
+      case 'note':
+        return (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+        );
+      case 'email':
+        return (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+        );
+      case 'meeting':
+        return (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        );
+      case 'call':
+        return (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+          </svg>
+        );
+      case 'task':
+        return (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          </svg>
+        );
+      case 'stage_change':
+        return (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+          </svg>
+        );
+      default:
+        return (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        );
+    }
+  };
+
+  const formatTimeAgo = (dateString) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  };
+
   const tabs = [
-    { id: 'plant', label: 'Plant Details', icon: '🏭' },
-    { id: 'project', label: 'Project', icon: '📋' },
-    { id: 'transaction', label: 'Transaction', icon: '💼' },
-    { id: 'stakeholders', label: 'Stakeholders', icon: '👥' },
-    { id: 'notes', label: 'Notes & Links', icon: '📝' },
+    { id: 'summary', label: 'Summary' },
+    { id: 'plant', label: 'Plant Details' },
+    { id: 'transaction', label: 'Transaction' },
+    { id: 'stakeholders', label: 'Stakeholders' },
+    { id: 'related', label: 'Related' },
   ];
 
-  const InputField = ({ label, name, type = 'text', required = false, placeholder = '', unit = '', ...props }) => (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">
-        {label}
-        {required && <span className="text-red-500 ml-1">*</span>}
-        {unit && <span className="text-gray-400 font-normal ml-1">({unit})</span>}
-      </label>
-      <input
-        type={type}
-        name={name}
-        value={formData[name] ?? ''}
-        onChange={handleChange}
-        placeholder={placeholder}
-        required={required}
-        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-        {...props}
-      />
-    </div>
-  );
-
-  const SelectField = ({ label, name, options, required = false, placeholder = 'Select...' }) => (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">
-        {label}
-        {required && <span className="text-red-500 ml-1">*</span>}
-      </label>
-      <select
-        name={name}
-        value={formData[name] ?? ''}
-        onChange={handleChange}
-        required={required}
-        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-      >
-        <option value="">{placeholder}</option>
-        {options.map(opt => (
-          <option key={opt.value || opt} value={opt.value || opt}>
-            {opt.label || opt}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-
-  const TextAreaField = ({ label, name, rows = 3, placeholder = '' }) => (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-      <textarea
-        name={name}
-        value={formData[name] ?? ''}
-        onChange={handleChange}
-        rows={rows}
-        placeholder={placeholder}
-        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-      />
-    </div>
-  );
-
   return (
-    <div className="h-[calc(100vh-64px)] flex flex-col bg-gray-50">
-      {/* Header */}
+    <div className="h-[calc(100vh-64px)] flex flex-col bg-gray-100">
+      {/* Top Action Bar */}
+      <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded">
+            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+          </button>
+          <button 
+            onClick={handleSubmit}
+            disabled={isSaving || !formData.plant_name}
+            className="flex items-center gap-2 px-4 py-1.5 bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            </svg>
+            Save
+          </button>
+          <button onClick={() => fetchActivities(transaction?.id)} className="flex items-center gap-2 px-4 py-1.5 border border-gray-300 rounded hover:bg-gray-50">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh
+          </button>
+          {transaction && (
+            <button 
+              onClick={() => onDelete(transaction.id)}
+              className="flex items-center gap-2 px-4 py-1.5 text-red-600 border border-red-200 rounded hover:bg-red-50"
+            >
+              Delete
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Header with Title and Key Metrics */}
       <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-            </button>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">
-                {transaction ? 'Edit Transaction' : 'New Transaction'}
-              </h1>
-              {transaction && (
-                <p className="text-sm text-gray-500">
-                  Created {new Date(transaction.created_at).toLocaleDateString('en-GB')}
-                </p>
-              )}
-            </div>
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-xl font-semibold text-gray-900">
+              {formData.project_name || formData.plant_name || 'New Transaction'}
+            </h1>
+            <p className="text-sm text-gray-500">
+              Transaction · {formData.country || 'No country set'}
+            </p>
           </div>
-          <div className="flex items-center gap-3">
-            {transaction && (
-              <button
-                onClick={() => onDelete(transaction.id)}
-                className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-              >
-                Delete
-              </button>
-            )}
-            <button
-              onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={isSaving || !formData.plant_name}
-              className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {isSaving && (
-                <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-              )}
-              {transaction ? 'Update' : 'Create'} Transaction
-            </button>
+          
+          {/* Key Metrics */}
+          <div className="flex items-center gap-6 text-sm">
+            <div className="text-center px-4 border-r border-gray-200">
+              <p className="text-gray-500">Est. Close Date</p>
+              <p className="font-semibold text-gray-900">
+                {formData.deal_timeframe 
+                  ? new Date(formData.deal_timeframe).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                  : '-'}
+              </p>
+            </div>
+            <div className="text-center px-4 border-r border-gray-200">
+              <p className="text-gray-500">Deal Size</p>
+              <p className="font-semibold text-gray-900">
+                {formData.estimated_deal_size 
+                  ? `$${(formData.estimated_deal_size / 1000000).toFixed(1)}M`
+                  : '-'}
+              </p>
+            </div>
+            <div className="text-center px-4 border-r border-gray-200">
+              <p className="text-gray-500">Status</p>
+              <div className="flex items-center justify-center gap-1.5">
+                {formData.transaction_status && (
+                  <div className={`w-2.5 h-2.5 rounded-full ${RAG_COLORS[formData.transaction_status]?.bg}`} />
+                )}
+                <p className={`font-semibold ${RAG_COLORS[formData.transaction_status]?.text || 'text-gray-900'}`}>
+                  {RAG_COLORS[formData.transaction_status]?.label || 'Not Set'}
+                </p>
+              </div>
+            </div>
+            <div className="text-center px-4">
+              <p className="text-gray-500">Owner</p>
+              <p className="font-semibold text-gray-900">{formData.assigned_to || userEmail || '-'}</p>
+            </div>
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 mt-4 -mb-px">
+        {/* Stage Progress Bar */}
+        <div className="mt-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-primary-700 bg-primary-100 px-2 py-1 rounded">
+                Transaction Pipeline
+              </span>
+              <span className="text-xs text-gray-500">Active for {daysActive} days</span>
+            </div>
+          </div>
+          
+          <div className="flex items-center">
+            {TRANSACTION_STAGES.map((stage, index) => {
+              const isActive = index === currentStageIndex;
+              const isCompleted = index < currentStageIndex;
+              const isLast = index === TRANSACTION_STAGES.length - 1;
+              
+              return (
+                <div key={stage.id} className="flex items-center flex-1">
+                  <button
+                    onClick={() => handleStageClick(stage.id)}
+                    className={`flex-1 relative py-3 px-4 text-sm font-medium transition-colors ${
+                      isActive 
+                        ? 'bg-primary-600 text-white' 
+                        : isCompleted 
+                          ? 'bg-primary-100 text-primary-700 hover:bg-primary-200'
+                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    } ${index === 0 ? 'rounded-l-lg' : ''} ${isLast ? 'rounded-r-lg' : ''}`}
+                  >
+                    <div className="flex items-center justify-center gap-2">
+                      {isCompleted ? (
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      ) : isActive ? (
+                        <div className="w-2 h-2 bg-white rounded-full" />
+                      ) : (
+                        <div className="w-2 h-2 bg-gray-400 rounded-full" />
+                      )}
+                      <span className="hidden lg:inline">{stage.label}</span>
+                    </div>
+                  </button>
+                  {!isLast && (
+                    <div className={`w-2 h-full ${isCompleted ? 'bg-primary-100' : 'bg-gray-100'}`} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="bg-white border-b border-gray-200 px-6">
+        <div className="flex gap-1">
           {tabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 rounded-t-lg font-medium text-sm transition-colors ${
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === tab.id
-                  ? 'bg-white text-primary-700 border-t border-x border-gray-200'
-                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                  ? 'border-primary-600 text-primary-700'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              <span className="mr-2">{tab.icon}</span>
               {tab.label}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Form Content */}
-      <div className="flex-1 overflow-y-auto p-6">
-        <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
-          {/* Plant Details Tab */}
-          {activeTab === 'plant' && (
-            <div className="bg-white rounded-lg shadow p-6 space-y-6">
-              <h2 className="text-lg font-semibold text-gray-900 border-b pb-2">Coal Plant Characteristics</h2>
-              
-              <div className="grid grid-cols-2 gap-6">
-                <InputField label="Plant Name" name="plant_name" required placeholder="e.g., Suralaya power stations" />
-                <InputField label="Unit Name" name="unit_name" placeholder="e.g., Unit 1" />
-              </div>
-
-              <div className="grid grid-cols-3 gap-6">
-                <InputField label="Capacity" name="capacity_mw" type="number" unit="MW" placeholder="1400" />
-                <SelectField 
-                  label="Country" 
-                  name="country" 
-                  options={countries}
-                  required
-                />
-                <SelectField 
-                  label="Operational Status" 
-                  name="operational_status" 
-                  options={[
-                    { value: 'operating', label: 'Operating' },
-                    { value: 'retired', label: 'Retired' },
-                    { value: 'cancelled', label: 'Cancelled' },
-                  ]}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-6">
-                <InputField label="Location (Coordinates)" name="location_coordinates" placeholder="e.g., -6.1234, 106.5678 (WGS84)" />
-                <InputField label="Owner" name="owner" placeholder="Company name" />
-              </div>
-
-              <div className="grid grid-cols-3 gap-6">
-                <InputField label="Start Year" name="start_year" type="number" placeholder="2016" />
-                <InputField label="Original End of Life Year" name="original_end_of_life_year" type="number" placeholder="2046" />
-                <InputField label="Grid Connection Type" name="grid_connection_type" placeholder="e.g., Baseload" />
-              </div>
-
-              <h3 className="text-md font-semibold text-gray-700 pt-4">Lifetime Emissions</h3>
-              <div className="grid grid-cols-3 gap-6">
-                <InputField label="Lifetime SOx" name="lifetime_sox_tonnes" type="number" unit="tonnes" placeholder="0" />
-                <InputField label="Lifetime NOx" name="lifetime_nox_tonnes" type="number" unit="tonnes" placeholder="0" />
-                <InputField label="Lifetime CO2" name="lifetime_co2_tonnes" type="number" unit="tonnes" placeholder="0" />
-              </div>
-            </div>
-          )}
-
-          {/* Project Tab */}
-          {activeTab === 'project' && (
-            <div className="bg-white rounded-lg shadow p-6 space-y-6">
-              <h2 className="text-lg font-semibold text-gray-900 border-b pb-2">CATA Project Characteristics</h2>
-              
-              <div className="grid grid-cols-2 gap-6">
-                <InputField label="Project Name" name="project_name" placeholder="Coal-to-Clean Transition Project" />
-                <InputField label="Project Value" name="project_value" type="number" unit="USD" placeholder="10000000" />
-              </div>
-
-              <div className="grid grid-cols-2 gap-6">
-                <SelectField 
-                  label="Project Stage" 
-                  name="project_stage" 
-                  options={[
-                    { value: 'concept_proposal', label: 'Concept/Proposal Development' },
-                    { value: 'in_delivery', label: 'In Delivery' },
-                    { value: 'completed', label: 'Completed' },
-                    { value: 'no_engagement', label: 'No Engagement' },
-                  ]}
-                />
-                <InputField label="Assigned To" name="assigned_to" placeholder="team.member@cata.org" />
-              </div>
-
-              <TextAreaField 
-                label="Key Contacts" 
-                name="key_contacts" 
-                placeholder="List key contacts for the project (names, roles, emails)"
-                rows={4}
-              />
-
-              <h3 className="text-md font-semibold text-gray-700 pt-4">Retirement Timeline</h3>
-              <div className="grid grid-cols-2 gap-6">
-                <InputField label="Planned Retirement Year" name="planned_retirement_year" type="number" placeholder="2030" />
-                <InputField label="Actual Retirement Year" name="actual_retirement_year" type="number" placeholder="2030" />
-              </div>
-
-              <InputField label="Planned Post-Retirement Status" name="planned_post_retirement_status" placeholder="e.g., Solar + Battery Storage" />
-            </div>
-          )}
-
-          {/* Transaction Tab */}
-          {activeTab === 'transaction' && (
-            <div className="bg-white rounded-lg shadow p-6 space-y-6">
-              <h2 className="text-lg font-semibold text-gray-900 border-b pb-2">Transaction Data</h2>
-              
-              <div className="grid grid-cols-2 gap-6">
-                <SelectField 
-                  label="Transaction Stage" 
-                  name="transaction_stage" 
-                  options={stages.map(s => ({ value: s.id, label: s.label }))}
-                />
-                <SelectField 
-                  label="Transaction Status (RAG)" 
-                  name="transaction_status" 
-                  options={[
-                    { value: 'green', label: '🟢 Green - On Track' },
-                    { value: 'amber', label: '🟠 Amber - At Risk' },
-                    { value: 'red', label: '🔴 Red - Blocked' },
-                  ]}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Transaction Confidence Rating
-                    <span className="text-gray-400 font-normal ml-1">(0-100%)</span>
-                  </label>
-                  <div className="flex items-center gap-4">
-                    <input
-                      type="range"
-                      name="transaction_confidence_rating"
-                      min="0"
-                      max="100"
-                      value={formData.transaction_confidence_rating || 0}
-                      onChange={handleChange}
-                      className="flex-1"
-                    />
-                    <span className={`text-lg font-bold min-w-[60px] text-right ${
-                      (formData.transaction_confidence_rating || 0) >= 70 ? 'text-emerald-600' :
-                      (formData.transaction_confidence_rating || 0) >= 40 ? 'text-amber-600' : 'text-red-600'
-                    }`}>
-                      {formData.transaction_confidence_rating || 0}%
-                    </span>
-                  </div>
-                </div>
-                <InputField label="Deal Timeframe (Expected Close)" name="deal_timeframe" type="date" />
-              </div>
-
-              <InputField label="Transition Type" name="transition_type" placeholder="e.g., Managed phase-out, Repurposing" />
-
-              <div className="grid grid-cols-2 gap-6">
-                <InputField label="Estimated Deal Size" name="estimated_deal_size" type="number" unit="USD" placeholder="50000000" />
-                <InputField label="Financial Mechanism" name="financial_mechanism" placeholder="e.g., Concessional loan, Grant, Blended finance" />
-              </div>
-
-              <InputField label="Lender(s) / Funder(s)" name="lenders_funders" placeholder="e.g., World Bank, ADB, JICA" />
-
-              {/* Next Steps */}
+      {/* Main Content - 3 Column Layout */}
+      <div className="flex-1 overflow-hidden flex">
+        {/* Left Column - Form Fields */}
+        <div className="w-1/3 border-r border-gray-200 bg-white overflow-y-auto p-6">
+          {activeTab === 'summary' && (
+            <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Transaction Next Steps</label>
-                <div className="space-y-2 mb-3">
+                <label className="block text-xs text-gray-500 mb-1">Project Name</label>
+                <input
+                  type="text"
+                  name="project_name"
+                  value={formData.project_name || ''}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  placeholder="Enter project name..."
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Plant Name <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  name="plant_name"
+                  value={formData.plant_name || ''}
+                  onChange={handleChange}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Country</label>
+                <select
+                  name="country"
+                  value={formData.country || ''}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                >
+                  <option value="">Select country...</option>
+                  {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Deal Timeframe</label>
+                <input
+                  type="date"
+                  name="deal_timeframe"
+                  value={formData.deal_timeframe || ''}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Transaction Status</label>
+                <select
+                  name="transaction_status"
+                  value={formData.transaction_status || ''}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                >
+                  <option value="">Select status...</option>
+                  <option value="green">🟢 Green - On Track</option>
+                  <option value="amber">🟠 Amber - At Risk</option>
+                  <option value="red">🔴 Red - Blocked</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Estimated Deal Size (USD)</label>
+                <input
+                  type="number"
+                  name="estimated_deal_size"
+                  value={formData.estimated_deal_size || ''}
+                  onChange={handleChange}
+                  placeholder="50000000"
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Transition Type</label>
+                <input
+                  type="text"
+                  name="transition_type"
+                  value={formData.transition_type || ''}
+                  onChange={handleChange}
+                  placeholder="e.g., Managed phase-out"
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Assigned To</label>
+                <input
+                  type="text"
+                  name="assigned_to"
+                  value={formData.assigned_to || ''}
+                  onChange={handleChange}
+                  placeholder="email@cata.org"
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Description / Notes</label>
+                <textarea
+                  name="notes"
+                  value={formData.notes || ''}
+                  onChange={handleChange}
+                  rows={4}
+                  placeholder="Add description..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                />
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'plant' && (
+            <div className="space-y-4">
+              <h3 className="font-semibold text-gray-900 border-b pb-2">Coal Plant Characteristics</h3>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Plant Name <span className="text-red-500">*</span></label>
+                <input type="text" name="plant_name" value={formData.plant_name || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Unit Name</label>
+                <input type="text" name="unit_name" value={formData.unit_name || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Capacity (MW)</label>
+                  <input type="number" name="capacity_mw" value={formData.capacity_mw || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Start Year</label>
+                  <input type="number" name="start_year" value={formData.start_year || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Location (Coordinates)</label>
+                <input type="text" name="location_coordinates" value={formData.location_coordinates || ''} onChange={handleChange} placeholder="-6.123, 106.567" className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Owner</label>
+                <input type="text" name="owner" value={formData.owner || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Operational Status</label>
+                <select name="operational_status" value={formData.operational_status || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500">
+                  <option value="operating">Operating</option>
+                  <option value="retired">Retired</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+              <h4 className="font-medium text-gray-700 pt-4">Lifetime Emissions</h4>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">SOx (t)</label>
+                  <input type="number" name="lifetime_sox_tonnes" value={formData.lifetime_sox_tonnes || ''} onChange={handleChange} className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">NOx (t)</label>
+                  <input type="number" name="lifetime_nox_tonnes" value={formData.lifetime_nox_tonnes || ''} onChange={handleChange} className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">CO2 (t)</label>
+                  <input type="number" name="lifetime_co2_tonnes" value={formData.lifetime_co2_tonnes || ''} onChange={handleChange} className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'transaction' && (
+            <div className="space-y-4">
+              <h3 className="font-semibold text-gray-900 border-b pb-2">Transaction Details</h3>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Financial Mechanism</label>
+                <input type="text" name="financial_mechanism" value={formData.financial_mechanism || ''} onChange={handleChange} placeholder="e.g., Concessional loan, Grant" className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Lender(s) / Funder(s)</label>
+                <input type="text" name="lenders_funders" value={formData.lenders_funders || ''} onChange={handleChange} placeholder="e.g., World Bank, ADB" className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Confidence Rating</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    name="transaction_confidence_rating"
+                    min="0"
+                    max="100"
+                    value={formData.transaction_confidence_rating || 0}
+                    onChange={handleChange}
+                    className="flex-1"
+                  />
+                  <span className={`text-lg font-bold min-w-[50px] text-right ${
+                    (formData.transaction_confidence_rating || 0) >= 70 ? 'text-emerald-600' :
+                    (formData.transaction_confidence_rating || 0) >= 40 ? 'text-amber-600' : 'text-red-600'
+                  }`}>
+                    {formData.transaction_confidence_rating || 0}%
+                  </span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Planned Retirement</label>
+                  <input type="number" name="planned_retirement_year" value={formData.planned_retirement_year || ''} onChange={handleChange} placeholder="2030" className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Actual Retirement</label>
+                  <input type="number" name="actual_retirement_year" value={formData.actual_retirement_year || ''} onChange={handleChange} placeholder="2030" className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Post-Retirement Status</label>
+                <input type="text" name="planned_post_retirement_status" value={formData.planned_post_retirement_status || ''} onChange={handleChange} placeholder="e.g., Solar + Storage" className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+              </div>
+              
+              {/* Next Steps */}
+              <div className="pt-4">
+                <label className="block text-xs text-gray-500 mb-2">Next Steps</label>
+                <div className="space-y-2 mb-2">
                   {nextSteps.map((step, index) => (
-                    <div key={index} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                    <div key={index} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
                       <input
                         type="checkbox"
                         checked={step.completed}
                         onChange={() => handleToggleNextStep(index)}
-                        className="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                        className="w-4 h-4 rounded border-gray-300 text-primary-600"
                       />
-                      <span className={`flex-1 ${step.completed ? 'line-through text-gray-400' : 'text-gray-700'}`}>
-                        {step.text}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveNextStep(index)}
-                        className="text-gray-400 hover:text-red-500"
-                      >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
+                      <span className={`flex-1 text-sm ${step.completed ? 'line-through text-gray-400' : ''}`}>{step.text}</span>
+                      <button onClick={() => handleRemoveNextStep(index)} className="text-gray-400 hover:text-red-500">×</button>
                     </div>
                   ))}
                 </div>
@@ -472,42 +721,49 @@ const TransactionDetail = ({
                     value={newNextStep}
                     onChange={(e) => setNewNextStep(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddNextStep())}
-                    placeholder="Add a next step..."
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    placeholder="Add next step..."
+                    className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-primary-500"
                   />
-                  <button
-                    type="button"
-                    onClick={handleAddNextStep}
-                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
-                  >
-                    Add
-                  </button>
+                  <button onClick={handleAddNextStep} className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded">Add</button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Stakeholders Tab */}
           {activeTab === 'stakeholders' && (
-            <div className="bg-white rounded-lg shadow p-6 space-y-6">
-              <h2 className="text-lg font-semibold text-gray-900 border-b pb-2">Stakeholders & Partners</h2>
-              
-              <TextAreaField 
-                label="Actors in Contact with Asset Owner / Government" 
-                name="actors_in_contact" 
-                placeholder="List organizations and individuals engaging with the asset owner or government"
-                rows={4}
-              />
-
+            <div className="space-y-4">
+              <h3 className="font-semibold text-gray-900 border-b pb-2">Stakeholders</h3>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Funded Delivery Partners</label>
+                <label className="block text-xs text-gray-500 mb-1">Key Contacts</label>
+                <textarea
+                  name="key_contacts"
+                  value={formData.key_contacts || ''}
+                  onChange={handleChange}
+                  rows={4}
+                  placeholder="Names, roles, emails..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Actors in Contact</label>
+                <textarea
+                  name="actors_in_contact"
+                  value={formData.actors_in_contact || ''}
+                  onChange={handleChange}
+                  rows={3}
+                  placeholder="Organizations engaging with owner/government..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-2">Funded Delivery Partners</label>
                 <div className="flex flex-wrap gap-2">
-                  {deliveryPartners.map(partner => (
+                  {DELIVERY_PARTNERS.map(partner => (
                     <button
                       key={partner}
                       type="button"
                       onClick={() => handlePartnerToggle(partner)}
-                      className={`px-4 py-2 rounded-lg border-2 transition-colors ${
+                      className={`px-3 py-1.5 text-sm rounded border transition-colors ${
                         formData.funded_delivery_partners?.includes(partner)
                           ? 'border-primary-500 bg-primary-50 text-primary-700'
                           : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
@@ -518,13 +774,26 @@ const TransactionDetail = ({
                   ))}
                 </div>
               </div>
+            </div>
+          )}
 
+          {activeTab === 'related' && (
+            <div className="space-y-4">
+              <h3 className="font-semibold text-gray-900 border-b pb-2">Related Work</h3>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Assumptions Confidence Rating
-                  <span className="text-gray-400 font-normal ml-1">(0-100%)</span>
-                </label>
-                <div className="flex items-center gap-4">
+                <label className="block text-xs text-gray-500 mb-1">Related Work Link</label>
+                <input
+                  type="url"
+                  name="related_work_link"
+                  value={formData.related_work_link || ''}
+                  onChange={handleChange}
+                  placeholder="https://..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Assumptions Confidence</label>
+                <div className="flex items-center gap-3">
                   <input
                     type="range"
                     name="assumptions_confidence_rating"
@@ -534,37 +803,257 @@ const TransactionDetail = ({
                     onChange={handleChange}
                     className="flex-1"
                   />
-                  <span className="text-lg font-bold min-w-[60px] text-right">
+                  <span className="text-lg font-bold min-w-[50px] text-right">
                     {formData.assumptions_confidence_rating || 0}%
                   </span>
                 </div>
-                <p className="text-sm text-gray-500 mt-1">Confidence level of assumptions used in the calculations</p>
               </div>
             </div>
           )}
+        </div>
 
-          {/* Notes Tab */}
-          {activeTab === 'notes' && (
-            <div className="bg-white rounded-lg shadow p-6 space-y-6">
-              <h2 className="text-lg font-semibold text-gray-900 border-b pb-2">Notes & Related Work</h2>
-              
-              <TextAreaField 
-                label="Notes" 
-                name="notes" 
-                placeholder="Add any additional notes, context, or information about this transaction..."
-                rows={8}
-              />
-
-              <InputField 
-                label="Related Work Link" 
-                name="related_work_link" 
-                type="url"
-                placeholder="https://..."
-              />
-              <p className="text-sm text-gray-500 -mt-4">Link to related projects, documents, or resources</p>
+        {/* Middle Column - Timeline */}
+        <div className="w-1/3 border-r border-gray-200 bg-white overflow-hidden flex flex-col">
+          <div className="p-4 border-b border-gray-200">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-gray-900">Timeline</h3>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowActivityForm(!showActivityForm)}
+                  className="p-1.5 hover:bg-gray-100 rounded"
+                  title="Add activity"
+                >
+                  <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+              </div>
             </div>
-          )}
-        </form>
+            
+            {/* Quick Note Input */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newNote}
+                onChange={(e) => setNewNote(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleAddNote()}
+                placeholder="Enter a note..."
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-sm"
+              />
+              <button
+                onClick={handleAddNote}
+                disabled={!newNote.trim() || !transaction?.id}
+                className="px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Activity Form */}
+            {showActivityForm && (
+              <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <select
+                  value={newActivity.type}
+                  onChange={(e) => setNewActivity(prev => ({ ...prev, type: e.target.value }))}
+                  className="w-full px-3 py-2 mb-2 border border-gray-300 rounded text-sm"
+                >
+                  <option value="note">📝 Note</option>
+                  <option value="email">📧 Email</option>
+                  <option value="meeting">📅 Meeting</option>
+                  <option value="call">📞 Call</option>
+                  <option value="task">✓ Task</option>
+                </select>
+                <input
+                  type="text"
+                  value={newActivity.title}
+                  onChange={(e) => setNewActivity(prev => ({ ...prev, title: e.target.value }))}
+                  placeholder="Title..."
+                  className="w-full px-3 py-2 mb-2 border border-gray-300 rounded text-sm"
+                />
+                <textarea
+                  value={newActivity.description}
+                  onChange={(e) => setNewActivity(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Description..."
+                  rows={2}
+                  className="w-full px-3 py-2 mb-2 border border-gray-300 rounded text-sm"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleAddActivity}
+                    disabled={!newActivity.title.trim() || !transaction?.id}
+                    className="flex-1 px-3 py-1.5 bg-primary-600 text-white rounded text-sm hover:bg-primary-700 disabled:opacity-50"
+                  >
+                    Add Activity
+                  </button>
+                  <button
+                    onClick={() => setShowActivityForm(false)}
+                    className="px-3 py-1.5 border border-gray-300 rounded text-sm hover:bg-gray-100"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Activities List */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {!transaction?.id ? (
+              <div className="text-center py-8 text-gray-400 text-sm">
+                Save the transaction to start tracking activities
+              </div>
+            ) : activities.length === 0 ? (
+              <div className="text-center py-8 text-gray-400 text-sm">
+                No activities yet. Add a note to get started.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {activities.map((activity) => (
+                  <div key={activity.id} className="flex gap-3">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      activity.activity_type === 'stage_change' ? 'bg-purple-100 text-purple-600' :
+                      activity.activity_type === 'email' ? 'bg-blue-100 text-blue-600' :
+                      activity.activity_type === 'meeting' ? 'bg-green-100 text-green-600' :
+                      activity.activity_type === 'call' ? 'bg-yellow-100 text-yellow-600' :
+                      'bg-gray-100 text-gray-600'
+                    }`}>
+                      {getActivityIcon(activity.activity_type)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm text-gray-900">{activity.title}</span>
+                        <span className="text-xs text-gray-400">{formatTimeAgo(activity.created_at)}</span>
+                      </div>
+                      {activity.description && (
+                        <p className="text-sm text-gray-600 mt-1">{activity.description}</p>
+                      )}
+                      <p className="text-xs text-gray-400 mt-1">by {activity.created_by || 'Unknown'}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Column - Insights */}
+        <div className="w-1/3 bg-gray-50 overflow-y-auto p-6">
+          <h3 className="font-semibold text-gray-900 mb-4">Insights</h3>
+          
+          {/* Confidence Score */}
+          <div className="bg-white rounded-lg p-4 mb-4 shadow-sm">
+            <h4 className="text-sm text-gray-500 mb-2">Transaction Score</h4>
+            <div className="flex items-end gap-3">
+              <span className={`text-4xl font-bold ${
+                (formData.transaction_confidence_rating || 0) >= 70 ? 'text-emerald-600' :
+                (formData.transaction_confidence_rating || 0) >= 40 ? 'text-amber-600' : 'text-red-600'
+              }`}>
+                {formData.transaction_confidence_rating || 0}
+              </span>
+              <div className="mb-1">
+                <span className={`text-sm font-medium ${
+                  (formData.transaction_confidence_rating || 0) >= 70 ? 'text-emerald-600' :
+                  (formData.transaction_confidence_rating || 0) >= 40 ? 'text-amber-600' : 'text-red-600'
+                }`}>
+                  {(formData.transaction_confidence_rating || 0) >= 70 ? 'Grade A' :
+                   (formData.transaction_confidence_rating || 0) >= 40 ? 'Grade B' : 'Grade C'}
+                </span>
+                <div className="flex items-center gap-1 text-xs text-gray-500">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                  </svg>
+                  {activities.length > 0 ? 'Active' : 'New'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Key Metrics */}
+          <div className="bg-white rounded-lg p-4 mb-4 shadow-sm">
+            <h4 className="text-sm text-gray-500 mb-3">Key Metrics</h4>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${formData.capacity_mw ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                <span className="text-sm text-gray-700">
+                  {formData.capacity_mw ? `${formData.capacity_mw} MW capacity` : 'Capacity not set'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${formData.estimated_deal_size ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                <span className="text-sm text-gray-700">
+                  {formData.estimated_deal_size 
+                    ? `$${(formData.estimated_deal_size / 1000000).toFixed(1)}M deal size`
+                    : 'Deal size not set'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${formData.deal_timeframe ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                <span className="text-sm text-gray-700">
+                  {formData.deal_timeframe 
+                    ? `Closes ${new Date(formData.deal_timeframe).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}`
+                    : 'Close date not set'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${formData.funded_delivery_partners?.length > 0 ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                <span className="text-sm text-gray-700">
+                  {formData.funded_delivery_partners?.length > 0 
+                    ? `${formData.funded_delivery_partners.length} delivery partner(s)`
+                    : 'No delivery partners'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Suggested Actions */}
+          <div className="bg-white rounded-lg p-4 shadow-sm">
+            <h4 className="text-sm text-gray-500 mb-3">Suggested Follow-ups</h4>
+            <div className="space-y-2">
+              {!formData.deal_timeframe && (
+                <div className="flex items-start gap-2 p-2 bg-amber-50 rounded text-sm">
+                  <svg className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <span className="text-amber-800">Set expected close date</span>
+                </div>
+              )}
+              {!formData.transaction_status && (
+                <div className="flex items-start gap-2 p-2 bg-blue-50 rounded text-sm">
+                  <svg className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-blue-800">Update transaction status (RAG)</span>
+                </div>
+              )}
+              {nextSteps.filter(s => !s.completed).length > 0 && (
+                <div className="flex items-start gap-2 p-2 bg-purple-50 rounded text-sm">
+                  <svg className="w-4 h-4 text-purple-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                  <span className="text-purple-800">{nextSteps.filter(s => !s.completed).length} pending next step(s)</span>
+                </div>
+              )}
+              {activities.length === 0 && transaction?.id && (
+                <div className="flex items-start gap-2 p-2 bg-gray-50 rounded text-sm">
+                  <svg className="w-4 h-4 text-gray-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                  <span className="text-gray-700">Add first activity note</span>
+                </div>
+              )}
+              {formData.deal_timeframe && formData.transaction_status && nextSteps.filter(s => !s.completed).length === 0 && (
+                <div className="flex items-start gap-2 p-2 bg-emerald-50 rounded text-sm">
+                  <svg className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-emerald-800">All key fields completed!</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
