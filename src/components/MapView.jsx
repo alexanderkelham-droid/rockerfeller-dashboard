@@ -386,30 +386,7 @@ const MapView = ({ userEmail }) => {
 
   const loadGlobalPlants = useCallback(async (callback) => {
     try {
-      // Get the list of plant names from impact results first
-      const impactPlantNames = new Set(
-        impactResults
-          .map(result => result['Unique plant name']?.toLowerCase()?.trim())
-          .filter(Boolean)
-      );
-      
-      console.log(`Filtering to ${impactPlantNames.size} unique plants with impact results`);
-      if (impactPlantNames.size > 0) {
-        console.log('Sample impact plant names:', Array.from(impactPlantNames).slice(0, 5));
-      }
-      
-      if (impactPlantNames.size === 0) {
-        console.log('No impact plant names to match against');
-        setGlobalPlants([]);
-        if (callback) callback([]);
-        return;
-      }
-      
-      // Build OR filter for plant names that match impact results
-      const plantNamesList = Array.from(impactPlantNames);
-      
-      // Query in batches since we can't do a big IN query easily
-      // Instead, fetch all operating plants and filter client-side (with higher limit)
+      // Fetch all operating plants from the database (paginated)
       let allData = [];
       let page = 0;
       const pageSize = 1000;
@@ -434,34 +411,25 @@ const MapView = ({ userEmail }) => {
       }
       
       console.log(`Global plants query returned ${allData.length} total operating plants`);
-      console.log(`Impact results available: ${impactResults.length}`);
       
-      // Debug: check first few global plant names and if they match
-      const sampleGlobalPlants = allData.slice(0, 10).map(p => p.plant_name?.toLowerCase()?.trim());
-      console.log('Sample global plant names:', sampleGlobalPlants);
+      // Get the list of plant names from impact results for marking
+      const impactPlantNames = new Set(
+        impactResults
+          .map(result => result['Unique plant name']?.toLowerCase()?.trim())
+          .filter(Boolean)
+      );
       
       // Group by unique plant (not by unit) and store unit details
       const uniquePlants = new Map();
       const plantUnitsMap = new Map(); // Store unit details for each plant
       
-      let matchedCount = 0;
       let skippedNoCoords = 0;
-      let skippedNoMatch = 0;
       
       allData.forEach(plant => {
         if (!plant.latitude || !plant.longitude) {
           skippedNoCoords++;
           return;
         }
-        
-        // Only include plants that have impact results (match by plant name)
-        const plantName = plant.plant_name?.toLowerCase()?.trim();
-        if (!plantName || !impactPlantNames.has(plantName)) {
-          skippedNoMatch++;
-          return;
-        }
-        
-        matchedCount++;
         
         const plantKey = `${plant.plant_name}_${plant.latitude}_${plant.longitude}`;
         
@@ -474,9 +442,13 @@ const MapView = ({ userEmail }) => {
           capacity: parseFloat(plant.capacity_mw) || 0
         });
         
+        // Check if this plant has impact data
+        const plantName = plant.plant_name?.toLowerCase()?.trim();
+        const hasImpactData = plantName && impactPlantNames.has(plantName);
+        
         // If we haven't seen this plant yet, or if this unit has higher capacity, use it
         if (!uniquePlants.has(plantKey)) {
-          uniquePlants.set(plantKey, { ...plant, unitDetails: [] });
+          uniquePlants.set(plantKey, { ...plant, unitDetails: [], hasImpactData });
         } else {
           const existing = uniquePlants.get(plantKey);
           const currentCapacity = parseFloat(plant.capacity_mw) || 0;
@@ -486,11 +458,12 @@ const MapView = ({ userEmail }) => {
           uniquePlants.set(plantKey, {
             ...existing,
             capacity_mw: existingCapacity + currentCapacity,
+            hasImpactData: existing.hasImpactData || hasImpactData,
           });
         }
       });
       
-      console.log(`Match stats: ${matchedCount} matched, ${skippedNoCoords} skipped (no coords), ${skippedNoMatch} skipped (no match)`);
+      console.log(`Skipped ${skippedNoCoords} plants with no coordinates`);
       
       // Attach unit details to each plant
       uniquePlants.forEach((plant, key) => {
@@ -518,10 +491,13 @@ const MapView = ({ userEmail }) => {
         latitude: parseFloat(plant.latitude),
         longitude: parseFloat(plant.longitude),
         isGlobal: true,
+        hasImpactData: plant.hasImpactData || false,
         unitDetails: plant.unitDetails || [], // Include unit details!
       }));
       
       console.log(`Loaded ${processedGlobal.length} unique plants from global database`);
+      const withImpact = processedGlobal.filter(p => p.hasImpactData).length;
+      console.log(`${withImpact} plants have impact data available`);
       
       setGlobalPlants(processedGlobal);
       if (callback) callback(processedGlobal);
