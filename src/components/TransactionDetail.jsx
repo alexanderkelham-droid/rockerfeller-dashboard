@@ -720,16 +720,30 @@ const TransactionDetail = ({
               )}
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Country</label>
-                <select
-                  name="country"
-                  value={formData.country || ''}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                >
-                  <option value="">Select country...</option>
-                  {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Country
+                  {formData.plants?.length > 0 && (
+                    <span className="ml-1 text-cyan-600 font-normal">(from plants)</span>
+                  )}
+                </label>
+                {formData.plants?.length > 0 ? (
+                  <input
+                    type="text"
+                    value={formData.country || ''}
+                    readOnly
+                    className="w-full px-3 py-2 border border-gray-300 rounded bg-gray-50 text-gray-600"
+                  />
+                ) : (
+                  <select
+                    name="country"
+                    value={formData.country || ''}
+                    onChange={handleChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  >
+                    <option value="">Select country...</option>
+                    {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                )}
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Expected Signing Date</label>
@@ -820,97 +834,205 @@ const TransactionDetail = ({
             <div className="space-y-4">
               <h3 className="font-semibold text-gray-900 border-b pb-2">Coal Plant Characteristics</h3>
               
-              {/* Plant Search in Plant Details tab too */}
-              <div ref={plantSearchRef} className="relative">
-                <label className="block text-xs text-gray-500 mb-1">
-                  Plant Name <span className="text-red-500">*</span>
-                  <span className="text-gray-400 ml-1">(Search database)</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={plantSearchQuery}
-                    onChange={(e) => {
-                      setPlantSearchQuery(e.target.value);
-                      setFormData(prev => ({ ...prev, plant_name: e.target.value }));
-                      setShowPlantDropdown(true);
-                    }}
-                    onFocus={() => setShowPlantDropdown(true)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                    placeholder="Type to search plants..."
-                  />
-                  {isSearchingPlants && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-600 border-t-transparent"></div>
-                    </div>
-                  )}
-                </div>
-                
-                {showPlantDropdown && plantSearchResults.length > 0 && (
-                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
-                    <div className="p-2 text-xs text-gray-500 border-b border-gray-100 bg-gray-50">
-                      {plantSearchResults.length} plants found - click to populate details
-                    </div>
-                    {plantSearchResults.map((plant, index) => (
-                      <button
-                        key={`${plant.plant_name}-${plant.unit_name}-${index}`}
-                        onClick={() => handleSelectPlant(plant)}
-                        className="w-full px-3 py-2 text-left hover:bg-primary-50 border-b border-gray-50 last:border-b-0"
-                      >
-                        <div className="font-medium text-gray-900 text-sm">{plant.plant_name}</div>
-                        <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
-                          {plant.unit_name && <span>Unit: {plant.unit_name}</span>}
-                          {plant.country_area && <span>• {plant.country_area}</span>}
-                          {plant.capacity_mw && <span>• {plant.capacity_mw} MW</span>}
+              {/* Show individual plants if any exist */}
+              {formData.plants?.length > 0 ? (
+                <>
+                  {/* Individual Plant Cards */}
+                  {formData.plants.map((plant, idx) => (
+                    <div key={plant.id || idx} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="font-semibold text-gray-800">
+                          Plant {idx + 1}: {plant.plant_name}
+                        </h4>
+                        <span className="text-xs bg-white px-2 py-1 rounded border border-gray-200 text-gray-600 capitalize">
+                          {plant.operational_status || 'Operating'}
+                        </span>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Unit Name</label>
+                          <p className="text-sm font-medium text-gray-800">{plant.unit_name || 'N/A'}</p>
                         </div>
-                      </button>
-                    ))}
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Capacity (MW)</label>
+                          <p className="text-sm font-medium text-gray-800">{plant.capacity_mw || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Country</label>
+                          <p className="text-sm font-medium text-gray-800">{plant.country || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Start Year</label>
+                          <p className="text-sm font-medium text-gray-800">{plant.start_year || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Owner</label>
+                          <p className="text-sm font-medium text-gray-800">{plant.owner || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Location</label>
+                          <p className="text-sm font-medium text-gray-800">{plant.location_coordinates || 'N/A'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {/* Combined Summary */}
+                  <div className="bg-cyan-50 rounded-lg p-4 border border-cyan-200 mt-4">
+                    <h4 className="font-semibold text-cyan-800 mb-3 flex items-center gap-2">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                      </svg>
+                      Combined Portfolio Summary
+                    </h4>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-xs text-cyan-600 mb-1">Total Plants</label>
+                        <p className="text-lg font-bold text-cyan-800">{formData.plants.length}</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-cyan-600 mb-1">Total Capacity</label>
+                        <p className="text-lg font-bold text-cyan-800">{formData.capacity_mw || 0} MW</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-cyan-600 mb-1">Countries</label>
+                        <p className="text-lg font-bold text-cyan-800">{[...new Set(formData.plants.map(p => p.country).filter(Boolean))].length}</p>
+                      </div>
+                    </div>
                   </div>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Unit Name</label>
-                <input type="text" name="unit_name" value={formData.unit_name || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    Total Capacity (MW)
-                    {formData.plants?.length > 0 && (
-                      <span className="ml-1 text-cyan-600 font-normal">(auto-calculated)</span>
+                  
+                  {/* Add more plants */}
+                  <div className="pt-4 border-t border-gray-200">
+                    <h4 className="font-medium text-gray-700 mb-2">Add More Plants</h4>
+                    <div ref={plantSearchRef} className="relative">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={plantSearchQuery}
+                          onChange={(e) => {
+                            setPlantSearchQuery(e.target.value);
+                            setShowPlantDropdown(true);
+                          }}
+                          onFocus={() => setShowPlantDropdown(true)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                          placeholder="Search to add another plant..."
+                        />
+                        {isSearchingPlants && (
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-600 border-t-transparent"></div>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {showPlantDropdown && plantSearchResults.length > 0 && (
+                        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                          <div className="p-2 text-xs text-gray-500 border-b border-gray-100 bg-gray-50">
+                            {plantSearchResults.length} plants found - click to add
+                          </div>
+                          {plantSearchResults.map((plant, index) => (
+                            <button
+                              key={`${plant.plant_name}-${plant.unit_name}-${index}`}
+                              onClick={() => handleSelectPlant(plant)}
+                              className="w-full px-3 py-2 text-left hover:bg-primary-50 border-b border-gray-50 last:border-b-0"
+                            >
+                              <div className="font-medium text-gray-900 text-sm">{plant.plant_name}</div>
+                              <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
+                                {plant.unit_name && <span>Unit: {plant.unit_name}</span>}
+                                {plant.country_area && <span>• {plant.country_area}</span>}
+                                {plant.capacity_mw && <span>• {plant.capacity_mw} MW</span>}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Original single plant form when no plants added */}
+                  <div ref={plantSearchRef} className="relative">
+                    <label className="block text-xs text-gray-500 mb-1">
+                      Plant Name <span className="text-red-500">*</span>
+                      <span className="text-gray-400 ml-1">(Search database)</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={plantSearchQuery}
+                        onChange={(e) => {
+                          setPlantSearchQuery(e.target.value);
+                          setFormData(prev => ({ ...prev, plant_name: e.target.value }));
+                          setShowPlantDropdown(true);
+                        }}
+                        onFocus={() => setShowPlantDropdown(true)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        placeholder="Type to search plants..."
+                      />
+                      {isSearchingPlants && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-600 border-t-transparent"></div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {showPlantDropdown && plantSearchResults.length > 0 && (
+                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                        <div className="p-2 text-xs text-gray-500 border-b border-gray-100 bg-gray-50">
+                          {plantSearchResults.length} plants found - click to populate details
+                        </div>
+                        {plantSearchResults.map((plant, index) => (
+                          <button
+                            key={`${plant.plant_name}-${plant.unit_name}-${index}`}
+                            onClick={() => handleSelectPlant(plant)}
+                            className="w-full px-3 py-2 text-left hover:bg-primary-50 border-b border-gray-50 last:border-b-0"
+                          >
+                            <div className="font-medium text-gray-900 text-sm">{plant.plant_name}</div>
+                            <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
+                              {plant.unit_name && <span>Unit: {plant.unit_name}</span>}
+                              {plant.country_area && <span>• {plant.country_area}</span>}
+                              {plant.capacity_mw && <span>• {plant.capacity_mw} MW</span>}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
                     )}
-                  </label>
-                  <input 
-                    type="number" 
-                    name="capacity_mw" 
-                    value={formData.capacity_mw || ''} 
-                    onChange={handleChange} 
-                    readOnly={formData.plants?.length > 0}
-                    className={`w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 ${formData.plants?.length > 0 ? 'bg-gray-50 text-gray-600' : ''}`}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Start Year</label>
-                  <input type="number" name="start_year" value={formData.start_year || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Location (Coordinates)</label>
-                <input type="text" name="location_coordinates" value={formData.location_coordinates || ''} onChange={handleChange} placeholder="-6.123, 106.567" className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Owner</label>
-                <input type="text" name="owner" value={formData.owner || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Operational Status</label>
-                <select name="operational_status" value={formData.operational_status || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500">
-                  <option value="operating">Operating</option>
-                  <option value="retired">Retired</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
-              </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Unit Name</label>
+                    <input type="text" name="unit_name" value={formData.unit_name || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Capacity (MW)</label>
+                      <input type="number" name="capacity_mw" value={formData.capacity_mw || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Start Year</label>
+                      <input type="number" name="start_year" value={formData.start_year || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Location (Coordinates)</label>
+                    <input type="text" name="location_coordinates" value={formData.location_coordinates || ''} onChange={handleChange} placeholder="-6.123, 106.567" className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Owner</label>
+                    <input type="text" name="owner" value={formData.owner || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Operational Status</label>
+                    <select name="operational_status" value={formData.operational_status || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500">
+                      <option value="operating">Operating</option>
+                      <option value="retired">Retired</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  </div>
+                </>
+              )}
+              
               <h4 className="font-medium text-gray-700 pt-4">Lifetime Emissions</h4>
               <div className="grid grid-cols-3 gap-2">
                 <div>
