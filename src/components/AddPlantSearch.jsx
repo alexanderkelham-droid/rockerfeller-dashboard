@@ -467,16 +467,7 @@ const AddPlantSearch = ({ onAddPlant, onToggleGlobal, showingGlobal, onFilteredP
           {showingGlobal ? 'Hide Global Plants' : 'Show Global Plants'}
         </button>
         
-        {/* Plant count display */}
-        {impactResults.length > 0 && (
-          <div className="mt-2 px-3 py-2 bg-cyan-50 border border-cyan-100 rounded-lg">
-            <p className="text-xs text-gray-600 text-center">
-              <span className="font-semibold text-cyan-700">{
-                new Set(impactResults.map(r => r['Unique plant name']?.toLowerCase()?.trim()).filter(Boolean)).size
-              }</span> plants with impact data available
-            </p>
-          </div>
-        )}
+        {/* Plant count display - removed */}
 
         {isOpen && filteredPlants.length > 0 && (
           <div className="mt-2 max-h-96 overflow-y-auto border border-secondary-200 rounded-md">

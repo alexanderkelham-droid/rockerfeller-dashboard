@@ -4,7 +4,6 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { supabase } from '../lib/supabaseClient';
 import AddPlantSearch from './AddPlantSearch';
 import ProjectDetail from './ProjectDetail';
-import CreateProject from './CreateProject';
 
 // Helper to normalize project_specific_data from Supabase
 const normalizeProjectData = (row) => ({
@@ -74,7 +73,6 @@ const MapView = ({ userEmail }) => {
   const [impactResults, setImpactResults] = useState([]); // Store impact results data
   const [selectedUnit, setSelectedUnit] = useState('all'); // Track which unit is selected in the popup
   const [selectedProjectForDetail, setSelectedProjectForDetail] = useState(null); // Track which project is opened in detail modal
-  const [showCreateProject, setShowCreateProject] = useState(false); // Track if create project modal is open
   const [provisionalMarker, setProvisionalMarker] = useState(null); // Store provisional marker reference
   const provisionalMarkerRef = useRef(null); // Ref for provisional marker DOM element
   const [transactions, setTransactions] = useState([]); // Store CRM transactions
@@ -1126,18 +1124,6 @@ const MapView = ({ userEmail }) => {
         impactResults={impactResults}
       />
       
-      {/* New Project Button */}
-      <div className="absolute bottom-6 left-6">
-        <button
-          onClick={() => setShowCreateProject(true)}
-          className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-lg"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          New Project
-        </button>
-      </div>
 
       {/* Selected plant details panel - positioned near the marker (for global plants only) */}
       {selectedPlant && selectedPlant.isGlobal && (() => {
@@ -1532,7 +1518,7 @@ const MapView = ({ userEmail }) => {
                   <p className="text-sm text-gray-500">{transaction?.country} {transaction?.capacity_mw ? `• ${transaction.capacity_mw} MW` : ''}</p>
                 </div>
                 <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border} border capitalize`}>
-                  {transaction?.transaction_status || 'N/A'}
+                  {transaction?.transaction_stage?.replace(/_/g, ' ') || 'N/A'}
                 </span>
               </div>
               
@@ -1629,12 +1615,39 @@ const MapView = ({ userEmail }) => {
                   </div>
                   
                   {/* Transaction Next Steps */}
-                  {transaction?.transaction_next_steps && (
-                    <div className="mt-6 pt-6 border-t border-gray-100">
-                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Next Steps</p>
-                      <p className="text-sm text-gray-700 leading-relaxed">{transaction.transaction_next_steps}</p>
-                    </div>
-                  )}
+                  {transaction?.transaction_next_steps && (() => {
+                    // Parse next steps - could be JSON array or plain text
+                    let nextStepsContent = null;
+                    try {
+                      const parsed = typeof transaction.transaction_next_steps === 'string' 
+                        ? JSON.parse(transaction.transaction_next_steps) 
+                        : transaction.transaction_next_steps;
+                      if (Array.isArray(parsed)) {
+                        nextStepsContent = (
+                          <ul className="space-y-2">
+                            {parsed.map((step, idx) => (
+                              <li key={idx} className="flex items-start gap-2 text-sm text-gray-700">
+                                <span className={`mt-0.5 w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center ${step.completed ? 'bg-emerald-100 border-emerald-300' : 'border-gray-300'}`}>
+                                  {step.completed && <svg className="w-2.5 h-2.5 text-emerald-600" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
+                                </span>
+                                <span className={step.completed ? 'line-through text-gray-400' : ''}>{step.text}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        );
+                      } else {
+                        nextStepsContent = <p className="text-sm text-gray-700 leading-relaxed">{transaction.transaction_next_steps}</p>;
+                      }
+                    } catch {
+                      nextStepsContent = <p className="text-sm text-gray-700 leading-relaxed">{transaction.transaction_next_steps}</p>;
+                    }
+                    return (
+                      <div className="mt-6 pt-6 border-t border-gray-100">
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Next Steps</p>
+                        {nextStepsContent}
+                      </div>
+                    );
+                  })()}
                   
                   {/* Transaction Intelligence / Notes */}
                   {transaction?.notes && (
@@ -1745,6 +1758,22 @@ const MapView = ({ userEmail }) => {
                             <div className="mt-3 pt-3 border-t border-gray-200">
                               <p className="text-xs text-gray-500 mb-1">Owner</p>
                               <p className="text-sm text-gray-700">{plant.owner}</p>
+                            </div>
+                          )}
+                          {plant.source && (
+                            <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between">
+                              <p className="text-xs text-gray-500">Source</p>
+                              <a 
+                                href={plant.source.split('\n')[0]} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-cyan-600 hover:text-cyan-700 flex items-center gap-1 text-xs"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                                View Source
+                              </a>
                             </div>
                           )}
                         </div>
@@ -1923,17 +1952,6 @@ const MapView = ({ userEmail }) => {
         />
       )}
 
-      {/* Create Project Modal */}
-      {showCreateProject && (
-        <CreateProject
-          onClose={() => {
-            setShowCreateProject(false);
-            handleProvisionalMarker(null); // Clear provisional marker on close
-          }}
-          onProjectCreated={handleProjectCreated}
-          onProvisionalMarker={handleProvisionalMarker}
-        />
-      )}
     </div>
   );
 };
