@@ -1025,7 +1025,7 @@ const MapView = ({ userEmail }) => {
   };
 
   useEffect(() => {
-    if (map.current) return; // Initialize map only once
+    if (map.current || !mapContainer.current) return; // Initialize map only once, and only when DOM is ready
 
     // Initialize MapLibre map
     map.current = new maplibregl.Map({
@@ -1071,7 +1071,7 @@ const MapView = ({ userEmail }) => {
         map.current = null;
       }
     };
-  }, [transactions]);
+  }, [transactions, isLoading]);
 
   if (isLoading) {
     return (
