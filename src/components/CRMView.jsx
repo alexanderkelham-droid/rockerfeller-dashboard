@@ -61,6 +61,9 @@ const CRMView = ({ userEmail }) => {
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
+      // Exclude closed transactions from pipeline
+      if (t.transaction_stage === 'closed') return false;
+      
       const matchesSearch = !searchTerm || 
         t.plant_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         t.project_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||

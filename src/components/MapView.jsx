@@ -1485,7 +1485,7 @@ const MapView = ({ userEmail }) => {
         
         return (
           <div 
-            className="fixed bg-gradient-to-br from-white to-cyan-50/30 rounded-xl shadow-2xl border border-cyan-100/50 backdrop-blur-sm z-[100] max-h-[80vh] overflow-hidden" 
+            className="fixed bg-white rounded-xl shadow-2xl border border-gray-200 z-[100] max-h-[80vh] overflow-hidden" 
             style={{ 
               width: '680px',
               top: popupPosition.y !== null ? `calc(80px + ${popupPosition.y}px)` : '80px',
@@ -1525,11 +1525,11 @@ const MapView = ({ userEmail }) => {
             </button>
             
             {/* Header Section */}
-            <div className="px-8 pt-4 pb-6 border-b border-cyan-100/50">
+            <div className="px-8 pt-4 pb-6 border-b border-gray-100">
               <div className="flex items-start justify-between pr-8">
                 <div>
-                  <h3 className="text-2xl font-semibold text-gray-800 mb-1">{transaction?.project_name || 'Transaction'}</h3>
-                  <p className="text-sm text-gray-500">{transaction?.country}</p>
+                  <h3 className="text-2xl font-semibold text-gray-800 mb-1">{transaction?.project_name || transaction?.plant_name || 'Transaction'}</h3>
+                  <p className="text-sm text-gray-500">{transaction?.country} {transaction?.capacity_mw ? `• ${transaction.capacity_mw} MW` : ''}</p>
                 </div>
                 <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border} border capitalize`}>
                   {transaction?.transaction_status || 'N/A'}
@@ -1542,7 +1542,7 @@ const MapView = ({ userEmail }) => {
                   onClick={() => setSelectedPopupTab('details')}
                   className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                     selectedPopupTab === 'details'
-                      ? 'bg-cyan-100 text-cyan-700'
+                      ? 'bg-slate-800 text-white'
                       : 'text-gray-500 hover:bg-gray-100'
                   }`}
                 >
@@ -1552,7 +1552,7 @@ const MapView = ({ userEmail }) => {
                   onClick={() => setSelectedPopupTab('plants')}
                   className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                     selectedPopupTab === 'plants'
-                      ? 'bg-cyan-100 text-cyan-700'
+                      ? 'bg-slate-800 text-white'
                       : 'text-gray-500 hover:bg-gray-100'
                   }`}
                 >
@@ -1562,7 +1562,7 @@ const MapView = ({ userEmail }) => {
                   onClick={() => setSelectedPopupTab('impact')}
                   className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                     selectedPopupTab === 'impact'
-                      ? 'bg-cyan-100 text-cyan-700'
+                      ? 'bg-slate-800 text-white'
                       : 'text-gray-500 hover:bg-gray-100'
                   }`}
                 >
@@ -1584,24 +1584,32 @@ const MapView = ({ userEmail }) => {
                         <p className="text-base font-semibold text-gray-800 capitalize">{transaction?.transaction_stage?.replace(/_/g, ' ') || 'N/A'}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Expected Signing Date</p>
-                        <p className="text-base font-semibold text-gray-800">{transaction?.expected_signing_date || 'N/A'}</p>
-                      </div>
-                      <div>
                         <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Owner</p>
                         <p className="text-base font-medium text-gray-700">{transaction?.owner || 'N/A'}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Capacity</p>
-                        <p className="text-base font-semibold text-gray-800">{transaction?.capacity_mw || 'N/A'} MW</p>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Transition Type</p>
+                        <p className="text-base font-medium text-gray-700">{transaction?.transition_type || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Financial Mechanism</p>
+                        <p className="text-base font-medium text-gray-700">{transaction?.financial_mechanism || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Lenders / Funders</p>
+                        <p className="text-base font-medium text-gray-700">{transaction?.lenders_funders || 'N/A'}</p>
                       </div>
                     </div>
                     
                     {/* Right Column */}
                     <div className="space-y-4">
                       <div>
-                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Transaction Confidence</p>
-                        <p className="text-base font-semibold text-gray-800">{transaction?.transaction_confidence_rating || 'N/A'}</p>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Project Value</p>
+                        <p className="text-base font-semibold text-gray-800">
+                          {transaction?.project_value 
+                            ? `${transaction?.deal_currency || 'USD'} ${parseFloat(transaction.project_value).toLocaleString()}`
+                            : 'N/A'}
+                        </p>
                       </div>
                       <div>
                         <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Target Retirement Year</p>
@@ -1612,19 +1620,23 @@ const MapView = ({ userEmail }) => {
                         <p className="text-base font-semibold text-gray-800">{transaction?.initial_retirement_year || 'N/A'}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Project Value</p>
-                        <p className="text-base font-semibold text-gray-800">
-                          {transaction?.project_value 
-                            ? `${transaction?.deal_currency || 'USD'} ${parseFloat(transaction.project_value).toLocaleString()}`
-                            : 'N/A'}
-                        </p>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Planned Post-Retirement</p>
+                        <p className="text-base font-medium text-gray-700">{transaction?.planned_post_retirement_status || 'N/A'}</p>
                       </div>
                     </div>
                   </div>
                   
+                  {/* Notes (Intelligence on Transaction Status) */}
+                  {transaction?.notes && (
+                    <div className="mt-6 pt-6 border-t border-gray-100">
+                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Transaction Intelligence</p>
+                      <p className="text-sm text-gray-700 leading-relaxed">{transaction.notes}</p>
+                    </div>
+                  )}
+                  
                   {/* Description */}
                   {transaction?.project_description && (
-                    <div className="mt-6 pt-6 border-t border-gray-100">
+                    <div className="mt-4 pt-4 border-t border-gray-100">
                       <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Description</p>
                       <p className="text-sm text-gray-700 leading-relaxed">{transaction.project_description}</p>
                     </div>
