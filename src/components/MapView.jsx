@@ -235,12 +235,6 @@ const MapView = ({ userEmail }) => {
       }).filter(row => row.latitude && row.longitude);
       
       setMapData(processedData);
-
-      // Add marker for the new project
-      const newProjectWithCoords = processedData.find(p => p.id === newProject.id);
-      if (newProjectWithCoords && map.current) {
-        addMarkerToMap(newProjectWithCoords, false);
-      }
     }
   };
 
@@ -359,11 +353,8 @@ const MapView = ({ userEmail }) => {
     const updatedData = [...mapData, newPlant];
     setMapData(updatedData);
     
-    // Add marker to the map immediately
+    // Fly to the plant location
     if (map.current) {
-      addMarkerToMap(newPlant, true); // true flag indicates it's newly added
-      
-      // Fly to the new plant location
       map.current.flyTo({
         center: [newPlant.longitude, newPlant.latitude],
         zoom: 8,
@@ -759,20 +750,23 @@ const MapView = ({ userEmail }) => {
     const { key, plantName, lat, lng, transactions: groupTxns } = group;
     const count = groupTxns.length;
 
-    // Create circular marker
+    // Wrapper element for the marker (MapLibre controls transform on this)
+    const wrapper = document.createElement('div');
+    wrapper.className = 'plant-node-marker';
+    wrapper.style.cursor = 'pointer';
+    
+    // Inner circle that we scale for hover (avoids conflicting with MapLibre's transform)
     const el = document.createElement('div');
-    el.className = 'plant-node-marker';
     el.style.width = '44px';
     el.style.height = '44px';
     el.style.borderRadius = '50%';
     el.style.background = 'linear-gradient(135deg, #f8fafc, #cbd5e1)';
     el.style.border = '3px solid #94a3b8';
     el.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15), inset 0 1px 2px rgba(255,255,255,0.6)';
-    el.style.cursor = 'pointer';
     el.style.display = 'flex';
     el.style.alignItems = 'center';
     el.style.justifyContent = 'center';
-    el.style.transition = 'all 0.2s ease';
+    el.style.transition = 'transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease';
     el.style.position = 'relative';
     el.style.zIndex = '10';
     
@@ -785,33 +779,36 @@ const MapView = ({ userEmail }) => {
       pointer-events: none;
     ">${count}</span>`;
     
-    // Tooltip
-    el.title = `${plantName} — ${count} transaction${count !== 1 ? 's' : ''}`;
+    wrapper.appendChild(el);
     
-    // Hover effects
-    el.addEventListener('mouseenter', () => {
+    // Tooltip
+    wrapper.title = `${plantName} — ${count} transaction${count !== 1 ? 's' : ''}`;
+    
+    // Hover effects on the inner circle (not the wrapper MapLibre controls)
+    wrapper.addEventListener('mouseenter', () => {
       el.style.transform = 'scale(1.15)';
       el.style.boxShadow = '0 6px 20px rgba(0,0,0,0.25), inset 0 1px 2px rgba(255,255,255,0.6)';
       el.style.border = '3px solid #64748b';
     });
-    el.addEventListener('mouseleave', () => {
-      if (expandedPlantKey !== key) {
+    wrapper.addEventListener('mouseleave', () => {
+      if (expandedPlantKeyRef.current !== key) {
         el.style.transform = 'scale(1)';
         el.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15), inset 0 1px 2px rgba(255,255,255,0.6)';
         el.style.border = '3px solid #94a3b8';
       }
     });
 
-    const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+    const marker = new maplibregl.Marker({ element: wrapper, anchor: 'center' })
       .setLngLat([lng, lat])
       .addTo(map.current);
 
-    marker._element = el;
-    el.__plantGroupKey = key;
-    el.__plantGroup = group;
+    marker._element = wrapper;
+    wrapper.__plantGroupKey = key;
+    wrapper.__plantGroup = group;
+    wrapper.__innerEl = el;
 
     // Click handler — expand/collapse radial
-    el.addEventListener('click', (e) => {
+    wrapper.addEventListener('click', (e) => {
       e.stopPropagation();
       
       if (expandedPlantKeyRef.current === key) {
@@ -829,9 +826,10 @@ const MapView = ({ userEmail }) => {
       clearRadialMarkers();
       // Reset any previously highlighted node
       document.querySelectorAll('.plant-node-marker').forEach(node => {
-        node.style.transform = 'scale(1)';
-        node.style.border = '3px solid #94a3b8';
-        node.style.background = 'linear-gradient(135deg, #f8fafc, #cbd5e1)';
+        const inner = node.__innerEl || node;
+        inner.style.transform = 'scale(1)';
+        inner.style.border = '3px solid #94a3b8';
+        inner.style.background = 'linear-gradient(135deg, #f8fafc, #cbd5e1)';
       });
       
       // Highlight this node
@@ -1027,7 +1025,7 @@ const MapView = ({ userEmail }) => {
   };
 
   useEffect(() => {
-    if (map.current || mapData.length === 0) return; // Initialize map only once
+    if (map.current) return; // Initialize map only once
 
     // Initialize MapLibre map
     map.current = new maplibregl.Map({
@@ -1039,11 +1037,6 @@ const MapView = ({ userEmail }) => {
     });
 
     map.current.on('load', () => {
-      // Add markers for each power plant using the helper function
-      mapData.forEach((plant) => {
-        addMarkerToMap(plant, false);
-      });
-      
       // Add transaction markers (grouped as plant nodes with radial expansion)
       addTransactionMarkers();
 
@@ -1053,13 +1046,22 @@ const MapView = ({ userEmail }) => {
       // Add fullscreen control
       map.current.addControl(new maplibregl.FullscreenControl(), 'top-right');
 
-      // Fit bounds to show all markers
-      if (mapData.length > 0) {
+      // Fit bounds to show all transaction markers
+      if (transactions.length > 0) {
         const bounds = new maplibregl.LngLatBounds();
-        mapData.forEach(plant => {
-          bounds.extend([plant.longitude, plant.latitude]);
+        let hasValidBounds = false;
+        transactions.forEach(t => {
+          if (t.location_coordinates) {
+            const [lat, lng] = t.location_coordinates.split(',').map(s => parseFloat(s?.trim()));
+            if (!isNaN(lat) && !isNaN(lng)) {
+              bounds.extend([lng, lat]);
+              hasValidBounds = true;
+            }
+          }
         });
-        map.current.fitBounds(bounds, { padding: 50, maxZoom: 6 });
+        if (hasValidBounds) {
+          map.current.fitBounds(bounds, { padding: 50, maxZoom: 6 });
+        }
       }
     });
 
@@ -1069,7 +1071,7 @@ const MapView = ({ userEmail }) => {
         map.current = null;
       }
     };
-  }, [mapData, transactions]);
+  }, [transactions]);
 
   if (isLoading) {
     return (
@@ -1082,15 +1084,7 @@ const MapView = ({ userEmail }) => {
     );
   }
 
-  if (mapData.length === 0) {
-    return (
-      <div className="w-full h-[calc(100vh-64px)] flex items-center justify-center bg-secondary-50">
-        <div className="text-center">
-          <p className="text-secondary-600">No location data available for your organization.</p>
-        </div>
-      </div>
-    );
-  }
+
 
   return (
     <div className="relative w-full h-[calc(100vh-64px)]">
