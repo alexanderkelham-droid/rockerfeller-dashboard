@@ -253,6 +253,26 @@ const TransactionDetail = ({
     });
   };
 
+  // Update individual plant field
+  const handlePlantFieldChange = (plantId, field, value) => {
+    setFormData(prev => {
+      const updatedPlants = prev.plants.map(p => 
+        p.id === plantId ? { ...p, [field]: value } : p
+      );
+      
+      // Recalculate totals if capacity changed
+      const totalCapacity = calculateTotalCapacity(updatedPlants);
+      const uniqueCountries = [...new Set(updatedPlants.map(p => p.country).filter(Boolean))];
+      
+      return {
+        ...prev,
+        plants: updatedPlants,
+        capacity_mw: totalCapacity || '',
+        country: uniqueCountries.length === 1 ? uniqueCountries[0] : uniqueCountries.join(', '),
+      };
+    });
+  };
+
   const fetchActivities = async (transactionId) => {
     if (!transactionId) return;
     try {
@@ -842,37 +862,102 @@ const TransactionDetail = ({
                     <div key={plant.id || idx} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                       <div className="flex items-center justify-between mb-3">
                         <h4 className="font-semibold text-gray-800">
-                          Plant {idx + 1}: {plant.plant_name}
+                          Plant {idx + 1}
                         </h4>
-                        <span className="text-xs bg-white px-2 py-1 rounded border border-gray-200 text-gray-600 capitalize">
-                          {plant.operational_status || 'Operating'}
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemovePlant(plant.id)}
+                          className="text-red-500 hover:text-red-700 text-xs flex items-center gap-1"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                          Remove
+                        </button>
                       </div>
                       
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">Unit Name</label>
-                          <p className="text-sm font-medium text-gray-800">{plant.unit_name || 'N/A'}</p>
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Plant Name</label>
+                            <input 
+                              type="text" 
+                              value={plant.plant_name || ''} 
+                              onChange={(e) => handlePlantFieldChange(plant.id, 'plant_name', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Unit Name</label>
+                            <input 
+                              type="text" 
+                              value={plant.unit_name || ''} 
+                              onChange={(e) => handlePlantFieldChange(plant.id, 'unit_name', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 text-sm"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Capacity (MW)</label>
+                            <input 
+                              type="number" 
+                              value={plant.capacity_mw || ''} 
+                              onChange={(e) => handlePlantFieldChange(plant.id, 'capacity_mw', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Country</label>
+                            <input 
+                              type="text" 
+                              value={plant.country || ''} 
+                              onChange={(e) => handlePlantFieldChange(plant.id, 'country', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Start Year</label>
+                            <input 
+                              type="number" 
+                              value={plant.start_year || ''} 
+                              onChange={(e) => handlePlantFieldChange(plant.id, 'start_year', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 text-sm"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Owner</label>
+                            <input 
+                              type="text" 
+                              value={plant.owner || ''} 
+                              onChange={(e) => handlePlantFieldChange(plant.id, 'owner', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Operational Status</label>
+                            <select 
+                              value={plant.operational_status || 'operating'} 
+                              onChange={(e) => handlePlantFieldChange(plant.id, 'operational_status', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 text-sm"
+                            >
+                              <option value="operating">Operating</option>
+                              <option value="retired">Retired</option>
+                              <option value="cancelled">Cancelled</option>
+                            </select>
+                          </div>
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-500 mb-1">Capacity (MW)</label>
-                          <p className="text-sm font-medium text-gray-800">{plant.capacity_mw || 'N/A'}</p>
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">Country</label>
-                          <p className="text-sm font-medium text-gray-800">{plant.country || 'N/A'}</p>
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">Start Year</label>
-                          <p className="text-sm font-medium text-gray-800">{plant.start_year || 'N/A'}</p>
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">Owner</label>
-                          <p className="text-sm font-medium text-gray-800">{plant.owner || 'N/A'}</p>
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">Location</label>
-                          <p className="text-sm font-medium text-gray-800">{plant.location_coordinates || 'N/A'}</p>
+                          <label className="block text-xs text-gray-500 mb-1">Location (Coordinates)</label>
+                          <input 
+                            type="text" 
+                            value={plant.location_coordinates || ''} 
+                            onChange={(e) => handlePlantFieldChange(plant.id, 'location_coordinates', e.target.value)}
+                            placeholder="-6.123, 106.567"
+                            className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 text-sm"
+                          />
                         </div>
                       </div>
                     </div>
