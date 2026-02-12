@@ -89,13 +89,21 @@ const MapView = ({ userEmail }) => {
   const [popupDragStart, setPopupDragStart] = useState({ x: 0, y: 0 });
   const [popupDragOffset, setPopupDragOffset] = useState({ x: 0, y: 0 });
 
-  // Transaction status colors for map markers
+  // Transaction status colors for map markers (keys are DB values: green, amber, red, closed)
   const TRANSACTION_STATUS_COLORS = {
-    'on track': '#10b981',    // emerald-500
-    'at risk': '#f59e0b',     // amber-500
-    'blocked': '#ef4444',     // red-500
-    'completed': '#6b7280',   // gray-500
-    default: '#3b82f6',       // blue-500 (for transactions without status)
+    'green': '#10b981',    // emerald-500
+    'amber': '#f59e0b',    // amber-500
+    'red': '#ef4444',      // red-500
+    'closed': '#6b7280',   // gray-500
+    default: '#3b82f6',    // blue-500 (for transactions without status)
+  };
+
+  // Map DB status values to human-readable text
+  const TRANSACTION_STATUS_LABELS = {
+    'green': 'On Track',
+    'amber': 'At Risk',
+    'red': 'Blocked',
+    'closed': 'Completed',
   };
 
   // MapTiler API key - Get your free key from https://cloud.maptiler.com/
@@ -751,7 +759,7 @@ const MapView = ({ userEmail }) => {
     // Determine dominant status color for the ring
     const statusCounts = {};
     groupTxns.forEach(t => {
-      const s = (t.transaction_status || 'default').toLowerCase();
+      const s = (t.transaction_status || 'default');
       statusCounts[s] = (statusCounts[s] || 0) + 1;
     });
     const dominantStatus = Object.entries(statusCounts).sort((a, b) => b[1] - a[1])[0][0];
@@ -800,7 +808,7 @@ const MapView = ({ userEmail }) => {
         const dotRadius = size / 2 + 1;
         const dx = dotRadius * Math.cos(angle);
         const dy = dotRadius * Math.sin(angle);
-        const sc = TRANSACTION_STATUS_COLORS[(txn.transaction_status || '').toLowerCase()] || TRANSACTION_STATUS_COLORS.default;
+        const sc = TRANSACTION_STATUS_COLORS[txn.transaction_status] || TRANSACTION_STATUS_COLORS.default;
         dot.style.cssText = `position:absolute;width:6px;height:6px;border-radius:50%;background:${sc};left:50%;top:50%;transform:translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px));pointer-events:none;box-shadow:0 0 2px rgba(0,0,0,0.4);`;
         el.appendChild(dot);
       });
@@ -901,7 +909,7 @@ const MapView = ({ userEmail }) => {
         const tx = centerPoint.x + radius * Math.cos(angle);
         const ty = centerPoint.y + radius * Math.sin(angle);
         
-        const statusColor = TRANSACTION_STATUS_COLORS[(txn.transaction_status || '').toLowerCase()] || TRANSACTION_STATUS_COLORS.default;
+        const statusColor = TRANSACTION_STATUS_COLORS[txn.transaction_status] || TRANSACTION_STATUS_COLORS.default;
         
         // Subtle line from center to node
         const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -1460,15 +1468,16 @@ const MapView = ({ userEmail }) => {
         const transaction = selectedPlant.transactionData;
         const transactionPlants = transaction?.plants || [];
         
-        // Get status color based on transaction_status values
+        // Get status color based on transaction_status values (green, amber, red, closed)
         const statusColors = {
-          'on track': { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-200' },
-          'at risk': { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' },
-          'blocked': { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-200' },
-          'completed': { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-200' },
+          'green': { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-200' },
+          'amber': { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' },
+          'red': { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-200' },
+          'closed': { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-200' },
         };
-        const statusKey = transaction?.transaction_status?.toLowerCase();
+        const statusKey = transaction?.transaction_status;
         const statusStyle = statusColors[statusKey] || { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200' };
+        const statusLabel = TRANSACTION_STATUS_LABELS[statusKey] || transaction?.transaction_status || 'N/A';
         
         return (
           <div 
@@ -1518,8 +1527,8 @@ const MapView = ({ userEmail }) => {
                   <h3 className="text-2xl font-semibold text-gray-800 mb-1">{transaction?.project_name || transaction?.plant_name || 'Transaction'}</h3>
                   <p className="text-sm text-gray-500">{transaction?.country} {transaction?.capacity_mw ? `• ${transaction.capacity_mw} MW` : ''}</p>
                 </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border} border capitalize`}>
-                  {transaction?.transaction_status || 'N/A'}
+                <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border} border`}>
+                  {statusLabel}
                 </span>
               </div>
               
@@ -1582,7 +1591,7 @@ const MapView = ({ userEmail }) => {
                       </div>
                       <div>
                         <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Transaction Status</p>
-                        <p className="text-base font-medium text-gray-700 capitalize">{transaction?.transaction_status || 'N/A'}</p>
+                        <p className="text-base font-medium text-gray-700">{statusLabel}</p>
                       </div>
                       <div>
                         <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Transaction Confidence</p>
