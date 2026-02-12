@@ -16,7 +16,22 @@ const RAG_COLORS = {
   green: { bg: 'bg-emerald-500', text: 'text-emerald-700', label: 'On Track' },
   amber: { bg: 'bg-amber-500', text: 'text-amber-700', label: 'At Risk' },
   red: { bg: 'bg-red-500', text: 'text-red-700', label: 'Blocked' },
+  closed: { bg: 'bg-gray-500', text: 'text-gray-700', label: 'Closed' },
 };
+
+// Currency options
+const CURRENCIES = [
+  { code: 'USD', symbol: '$', label: 'US Dollar' },
+  { code: 'EUR', symbol: '€', label: 'Euro' },
+  { code: 'GBP', symbol: '£', label: 'British Pound' },
+  { code: 'JPY', symbol: '¥', label: 'Japanese Yen' },
+  { code: 'CNY', symbol: '¥', label: 'Chinese Yuan' },
+  { code: 'INR', symbol: '₹', label: 'Indian Rupee' },
+  { code: 'IDR', symbol: 'Rp', label: 'Indonesian Rupiah' },
+  { code: 'VND', symbol: '₫', label: 'Vietnamese Dong' },
+  { code: 'PHP', symbol: '₱', label: 'Philippine Peso' },
+  { code: 'ZAR', symbol: 'R', label: 'South African Rand' },
+];
 
 // Country list
 const COUNTRIES = [
@@ -61,15 +76,16 @@ const TransactionDetail = ({
     project_stage: 'concept_proposal',
     key_contacts: '',
     project_name: '',
-    planned_retirement_year: '',
-    actual_retirement_year: '',
+    initial_retirement_year: '',  // renamed from planned_retirement_year
+    target_retirement_year: '',   // renamed from actual_retirement_year
     transition_type: '',
     transaction_stage: 'origination',
     transaction_status: '',
     transaction_confidence_rating: '',
     transaction_next_steps: '',
-    deal_timeframe: '',
+    expected_signing_date: '',    // renamed from deal_timeframe
     estimated_deal_size: '',
+    deal_currency: 'USD',         // new field
     financial_mechanism: '',
     lenders_funders: '',
     planned_post_retirement_status: '',
@@ -79,6 +95,7 @@ const TransactionDetail = ({
     assumptions_confidence_rating: '',
     notes: '',
     assigned_to: '',
+    plants: [],                   // new field for multiple plants
   });
 
   const [activeTab, setActiveTab] = useState('summary');
@@ -102,8 +119,13 @@ const TransactionDetail = ({
     if (transaction) {
       setFormData({
         ...transaction,
-        deal_timeframe: transaction.deal_timeframe ? transaction.deal_timeframe.split('T')[0] : '',
+        expected_signing_date: transaction.expected_signing_date ? transaction.expected_signing_date.split('T')[0] : 
+                              (transaction.deal_timeframe ? transaction.deal_timeframe.split('T')[0] : ''),
         funded_delivery_partners: transaction.funded_delivery_partners || [],
+        plants: transaction.plants || [],
+        deal_currency: transaction.deal_currency || 'USD',
+        initial_retirement_year: transaction.initial_retirement_year || transaction.planned_retirement_year || '',
+        target_retirement_year: transaction.target_retirement_year || transaction.actual_retirement_year || '',
       });
       setPlantSearchQuery(transaction.plant_name || '');
       try {
@@ -166,10 +188,10 @@ const TransactionDetail = ({
     return () => clearTimeout(timeoutId);
   }, [plantSearchQuery, showPlantDropdown]);
 
-  // Handle plant selection from search
+  // Handle plant selection from search - adds to plants array
   const handleSelectPlant = (plant) => {
-    setFormData(prev => ({
-      ...prev,
+    const newPlant = {
+      id: Date.now(), // temporary id for UI
       plant_name: plant.plant_name || '',
       unit_name: plant.unit_name || '',
       capacity_mw: plant.capacity_mw || '',
@@ -178,10 +200,31 @@ const TransactionDetail = ({
       owner: plant.owner || '',
       start_year: plant.start_year || '',
       operational_status: plant.status || 'operating',
+      gem_id: plant.gem_unit_phase_id || '',
+    };
+    
+    // Add to plants array
+    setFormData(prev => ({
+      ...prev,
+      plants: [...(prev.plants || []), newPlant],
+      // Also set as primary plant if first one
+      plant_name: prev.plants?.length === 0 ? plant.plant_name : prev.plant_name,
+      country: prev.plants?.length === 0 ? plant.country_area : prev.country,
+      location_coordinates: prev.plants?.length === 0 && plant.latitude && plant.longitude 
+        ? `${plant.latitude}, ${plant.longitude}` 
+        : prev.location_coordinates,
     }));
-    setPlantSearchQuery(plant.plant_name || '');
+    setPlantSearchQuery('');
     setShowPlantDropdown(false);
     setPlantSearchResults([]);
+  };
+
+  // Remove plant from array
+  const handleRemovePlant = (plantId) => {
+    setFormData(prev => ({
+      ...prev,
+      plants: prev.plants.filter(p => p.id !== plantId),
+    }));
   };
 
   const fetchActivities = async (transactionId) => {
@@ -309,12 +352,13 @@ const TransactionDetail = ({
         lifetime_nox_tonnes: formData.lifetime_nox_tonnes === '' ? null : formData.lifetime_nox_tonnes,
         lifetime_co2_tonnes: formData.lifetime_co2_tonnes === '' ? null : formData.lifetime_co2_tonnes,
         project_value: formData.project_value === '' ? null : formData.project_value,
-        planned_retirement_year: formData.planned_retirement_year === '' ? null : formData.planned_retirement_year,
-        actual_retirement_year: formData.actual_retirement_year === '' ? null : formData.actual_retirement_year,
+        initial_retirement_year: formData.initial_retirement_year === '' ? null : formData.initial_retirement_year,
+        target_retirement_year: formData.target_retirement_year === '' ? null : formData.target_retirement_year,
         transaction_confidence_rating: formData.transaction_confidence_rating === '' ? null : formData.transaction_confidence_rating,
         estimated_deal_size: formData.estimated_deal_size === '' ? null : formData.estimated_deal_size,
         assumptions_confidence_rating: formData.assumptions_confidence_rating === '' ? null : formData.assumptions_confidence_rating,
-        deal_timeframe: formData.deal_timeframe || null,
+        expected_signing_date: formData.expected_signing_date || null,
+        plants: formData.plants || [],
       };
 
       await onSave(dataToSave);
@@ -411,7 +455,7 @@ const TransactionDetail = ({
           </button>
           <button 
             onClick={handleSubmit}
-            disabled={isSaving || !formData.plant_name}
+            disabled={isSaving || (!formData.plant_name && (!formData.plants || formData.plants.length === 0))}
             className="flex items-center gap-2 px-4 py-1.5 bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -444,17 +488,17 @@ const TransactionDetail = ({
               {formData.project_name || formData.plant_name || 'New Transaction'}
             </h1>
             <p className="text-sm text-gray-500">
-              Transaction · {formData.country || 'No country set'}
+              Transaction · {formData.country || 'No country set'} · {formData.plants?.length || 0} plant(s)
             </p>
           </div>
           
           {/* Key Metrics */}
           <div className="flex items-center gap-6 text-sm">
             <div className="text-center px-4 border-r border-gray-200">
-              <p className="text-gray-500">Est. Close Date</p>
+              <p className="text-gray-500">Expected Signing</p>
               <p className="font-semibold text-gray-900">
-                {formData.deal_timeframe 
-                  ? new Date(formData.deal_timeframe).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                {formData.expected_signing_date 
+                  ? new Date(formData.expected_signing_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
                   : '-'}
               </p>
             </div>
@@ -462,7 +506,7 @@ const TransactionDetail = ({
               <p className="text-gray-500">Deal Size</p>
               <p className="font-semibold text-gray-900">
                 {formData.estimated_deal_size 
-                  ? `$${(formData.estimated_deal_size / 1000000).toFixed(1)}M`
+                  ? `${CURRENCIES.find(c => c.code === formData.deal_currency)?.symbol || '$'}${(formData.estimated_deal_size / 1000000).toFixed(1)}M`
                   : '-'}
               </p>
             </div>
@@ -573,11 +617,11 @@ const TransactionDetail = ({
                 />
               </div>
               
-              {/* Plant Name with Search */}
+              {/* Plant Search - Multiple Plants Support */}
               <div ref={plantSearchRef} className="relative">
                 <label className="block text-xs text-gray-500 mb-1">
-                  Plant Name <span className="text-red-500">*</span>
-                  <span className="text-gray-400 ml-1">(Search database)</span>
+                  Add Plants <span className="text-red-500">*</span>
+                  <span className="text-gray-400 ml-1">(Search database to add)</span>
                 </label>
                 <div className="relative">
                   <input
@@ -585,12 +629,11 @@ const TransactionDetail = ({
                     value={plantSearchQuery}
                     onChange={(e) => {
                       setPlantSearchQuery(e.target.value);
-                      setFormData(prev => ({ ...prev, plant_name: e.target.value }));
                       setShowPlantDropdown(true);
                     }}
                     onFocus={() => setShowPlantDropdown(true)}
                     className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                    placeholder="Type to search plants..."
+                    placeholder="Type to search and add plants..."
                   />
                   {isSearchingPlants && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -603,7 +646,7 @@ const TransactionDetail = ({
                 {showPlantDropdown && plantSearchResults.length > 0 && (
                   <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
                     <div className="p-2 text-xs text-gray-500 border-b border-gray-100 bg-gray-50">
-                      {plantSearchResults.length} plants found - click to populate details
+                      {plantSearchResults.length} plants found - click to add
                     </div>
                     {plantSearchResults.map((plant, index) => (
                       <button
@@ -623,6 +666,33 @@ const TransactionDetail = ({
                 )}
               </div>
 
+              {/* Added Plants List */}
+              {formData.plants?.length > 0 && (
+                <div className="space-y-2">
+                  <label className="block text-xs text-gray-500">Plants in Transaction ({formData.plants.length})</label>
+                  {formData.plants.map((plant) => (
+                    <div key={plant.id} className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200">
+                      <div className="flex-1">
+                        <span className="font-medium text-sm">{plant.plant_name}</span>
+                        <span className="text-xs text-gray-500 ml-2">
+                          {plant.unit_name && `${plant.unit_name} • `}
+                          {plant.capacity_mw && `${plant.capacity_mw} MW • `}
+                          {plant.country}
+                        </span>
+                      </div>
+                      <button 
+                        onClick={() => handleRemovePlant(plant.id)}
+                        className="text-red-500 hover:text-red-700 p-1"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Country</label>
                 <select
@@ -636,11 +706,11 @@ const TransactionDetail = ({
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Deal Timeframe</label>
+                <label className="block text-xs text-gray-500 mb-1">Expected Signing Date</label>
                 <input
                   type="date"
-                  name="deal_timeframe"
-                  value={formData.deal_timeframe || ''}
+                  name="expected_signing_date"
+                  value={formData.expected_signing_date || ''}
                   onChange={handleChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 />
@@ -657,18 +727,32 @@ const TransactionDetail = ({
                   <option value="green">🟢 Green - On Track</option>
                   <option value="amber">🟠 Amber - At Risk</option>
                   <option value="red">🔴 Red - Blocked</option>
+                  <option value="closed">⚫ Grey - Closed</option>
                 </select>
               </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Estimated Deal Size (USD)</label>
-                <input
-                  type="number"
-                  name="estimated_deal_size"
-                  value={formData.estimated_deal_size || ''}
-                  onChange={handleChange}
-                  placeholder="50000000"
-                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                />
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <label className="block text-xs text-gray-500 mb-1">Estimated Deal Size</label>
+                  <input
+                    type="number"
+                    name="estimated_deal_size"
+                    value={formData.estimated_deal_size || ''}
+                    onChange={handleChange}
+                    placeholder="50000000"
+                    className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Currency</label>
+                  <select
+                    name="deal_currency"
+                    value={formData.deal_currency || 'USD'}
+                    onChange={handleChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  >
+                    {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
+                  </select>
+                </div>
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Transition Type</label>
@@ -819,7 +903,7 @@ const TransactionDetail = ({
                 <input type="text" name="lenders_funders" value={formData.lenders_funders || ''} onChange={handleChange} placeholder="e.g., World Bank, ADB" className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Confidence Rating</label>
+                <label className="block text-xs text-gray-500 mb-1">Transaction Confidence Rating</label>
                 <div className="flex items-center gap-3">
                   <input
                     type="range"
@@ -840,12 +924,12 @@ const TransactionDetail = ({
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Planned Retirement</label>
-                  <input type="number" name="planned_retirement_year" value={formData.planned_retirement_year || ''} onChange={handleChange} placeholder="2030" className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+                  <label className="block text-xs text-gray-500 mb-1">Initial Retirement Date</label>
+                  <input type="number" name="initial_retirement_year" value={formData.initial_retirement_year || ''} onChange={handleChange} placeholder="2030" className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Actual Retirement</label>
-                  <input type="number" name="actual_retirement_year" value={formData.actual_retirement_year || ''} onChange={handleChange} placeholder="2030" className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+                  <label className="block text-xs text-gray-500 mb-1">Target Retirement Date</label>
+                  <input type="number" name="target_retirement_year" value={formData.target_retirement_year || ''} onChange={handleChange} placeholder="2030" className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
                 </div>
               </div>
               <div>

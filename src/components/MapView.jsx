@@ -77,12 +77,23 @@ const MapView = ({ userEmail }) => {
   const [showCreateProject, setShowCreateProject] = useState(false); // Track if create project modal is open
   const [provisionalMarker, setProvisionalMarker] = useState(null); // Store provisional marker reference
   const provisionalMarkerRef = useRef(null); // Ref for provisional marker DOM element
+  const [transactions, setTransactions] = useState([]); // Store CRM transactions
+  const [selectedPopupTab, setSelectedPopupTab] = useState('details'); // 'details' or 'impact'
   
   // Popup drag state
   const [popupPosition, setPopupPosition] = useState({ x: null, y: null }); // null means use default centered position
   const [isPopupDragging, setIsPopupDragging] = useState(false);
   const [popupDragStart, setPopupDragStart] = useState({ x: 0, y: 0 });
   const [popupDragOffset, setPopupDragOffset] = useState({ x: 0, y: 0 });
+
+  // Transaction status colors for triangles
+  const TRANSACTION_STATUS_COLORS = {
+    green: '#10b981',    // emerald-500
+    amber: '#f59e0b',    // amber-500
+    red: '#ef4444',      // red-500
+    closed: '#6b7280',   // gray-500
+    default: '#3b82f6',  // blue-500 (for transactions without status)
+  };
 
   // MapTiler API key - Get your free key from https://cloud.maptiler.com/
   // Sign up, go to Account > Keys, and copy your key here
@@ -286,6 +297,15 @@ const MapView = ({ userEmail }) => {
       } else {
         // Normalize column names for compatibility
         setImpactResults((impactResultsData || []).map(normalizeImpactResult));
+      }
+      // Fetch CRM transactions
+      const { data: transactionData, error: transactionError } = await supabase
+        .from('transactions')
+        .select('*');
+      if (transactionError) {
+        console.error('Error loading transactions from Supabase:', transactionError);
+      } else {
+        setTransactions(transactionData || []);
       }
       setIsLoading(false);
     }
@@ -688,6 +708,97 @@ const MapView = ({ userEmail }) => {
     setMarkers(prev => [...prev, marker]);
   };
 
+  // Add transaction markers as triangles with status colors
+  const addTransactionMarker = (transaction) => {
+    if (!map.current) return;
+    
+    // Parse coordinates from location_coordinates field
+    const coords = transaction.location_coordinates;
+    if (!coords) return;
+    
+    const [lat, lng] = coords.split(',').map(s => parseFloat(s?.trim()));
+    if (isNaN(lat) || isNaN(lng)) return;
+
+    // Create triangle marker element
+    const el = document.createElement('div');
+    el.className = 'transaction-marker';
+    el.style.width = '0';
+    el.style.height = '0';
+    el.style.borderLeft = '12px solid transparent';
+    el.style.borderRight = '12px solid transparent';
+    el.style.borderBottom = '20px solid';
+    el.style.position = 'absolute';
+    el.style.transform = 'translate(-50%, -100%)';
+    el.style.cursor = 'pointer';
+    
+    // Color based on transaction status
+    const statusColor = TRANSACTION_STATUS_COLORS[transaction.transaction_status] || TRANSACTION_STATUS_COLORS.default;
+    el.style.borderBottomColor = statusColor;
+    el.style.filter = 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))';
+    
+    // Store transaction data
+    el.__transactionData = transaction;
+    el.__isTransaction = true;
+    
+    // Hover effects
+    el.addEventListener('mouseenter', () => {
+      el.style.borderLeft = '14px solid transparent';
+      el.style.borderRight = '14px solid transparent';
+      el.style.borderBottom = '24px solid';
+      el.style.borderBottomColor = statusColor;
+      el.style.filter = 'drop-shadow(0 3px 6px rgba(0,0,0,0.4))';
+    });
+    el.addEventListener('mouseleave', () => {
+      el.style.borderLeft = '12px solid transparent';
+      el.style.borderRight = '12px solid transparent';
+      el.style.borderBottom = '20px solid';
+      el.style.borderBottomColor = statusColor;
+      el.style.filter = 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))';
+    });
+
+    // Create marker
+    const marker = new maplibregl.Marker({ element: el })
+      .setLngLat([lng, lat])
+      .addTo(map.current);
+
+    marker._element = el;
+
+    // Click handler - show transaction details
+    el.addEventListener('click', () => {
+      const currentCenter = map.current.getCenter();
+      const currentZoom = map.current.getZoom();
+      setPreviousView({ center: [currentCenter.lng, currentCenter.lat], zoom: currentZoom });
+      
+      // Create a plant-like object for the popup
+      const plantData = {
+        'Plant Name': transaction.plant_name || transaction.project_name,
+        'Country': transaction.country,
+        'Capacity (MW)': transaction.capacity_mw,
+        'Operational Status': transaction.operational_status || 'Operating',
+        'Owner': transaction.owner,
+        'Start year': transaction.start_year,
+        latitude: lat,
+        longitude: lng,
+        isTransaction: true,
+        transactionData: transaction,
+      };
+      
+      setSelectedPlant(plantData);
+      setSelectedPlantProjects([]);
+      setSelectedUnit('all');
+      setSelectedPopupTab('details');
+      
+      map.current.flyTo({
+        center: [lng, lat],
+        zoom: 10,
+        duration: 1500,
+        essential: true
+      });
+    });
+
+    setMarkers(prev => [...prev, marker]);
+  };
+
   useEffect(() => {
     if (map.current || mapData.length === 0) return; // Initialize map only once
 
@@ -704,6 +815,11 @@ const MapView = ({ userEmail }) => {
       // Add markers for each power plant using the helper function
       mapData.forEach((plant) => {
         addMarkerToMap(plant, false);
+      });
+      
+      // Add transaction markers (triangles with status colors)
+      transactions.forEach((transaction) => {
+        addTransactionMarker(transaction);
       });
 
       // Add navigation controls
@@ -728,7 +844,7 @@ const MapView = ({ userEmail }) => {
         map.current = null;
       }
     };
-  }, [mapData]);
+  }, [mapData, transactions]);
 
   if (isLoading) {
     return (
@@ -800,6 +916,32 @@ const MapView = ({ userEmail }) => {
         <p className="text-xs text-secondary-500 mt-3">Total: {
           mapData.length + (showAllGlobalPlants ? filteredGlobalPlants.length : 0)
         } plants</p>
+        
+        {/* Transaction Status Legend */}
+        {transactions.length > 0 && (
+          <>
+            <h4 className="font-semibold text-sm mt-4 mb-3 pt-3 border-t border-gray-200">Transaction Status</h4>
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent" style={{ borderBottomColor: '#10b981' }}></div>
+                <span className="text-xs">Green ({transactions.filter(t => t.transaction_status === 'green').length})</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent" style={{ borderBottomColor: '#f59e0b' }}></div>
+                <span className="text-xs">Amber ({transactions.filter(t => t.transaction_status === 'amber').length})</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent" style={{ borderBottomColor: '#ef4444' }}></div>
+                <span className="text-xs">Red ({transactions.filter(t => t.transaction_status === 'red').length})</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent" style={{ borderBottomColor: '#6b7280' }}></div>
+                <span className="text-xs">Closed ({transactions.filter(t => t.transaction_status === 'closed').length})</span>
+              </div>
+            </div>
+            <p className="text-xs text-secondary-500 mt-3">Total: {transactions.length} transactions</p>
+          </>
+        )}
         
         {/* New Project Button */}
         <button
@@ -906,6 +1048,7 @@ const MapView = ({ userEmail }) => {
                 }
                 setSelectedPlant(null);
                 setSelectedUnit('all');
+                setSelectedPopupTab('details');
               }}
               className="absolute top-6 right-4 text-gray-400 hover:text-gray-600 transition-colors duration-200 z-10"
             >
@@ -918,148 +1061,224 @@ const MapView = ({ userEmail }) => {
             <div className="px-8 pt-4 pb-6 border-b border-cyan-100/50">
               <h3 className="text-2xl font-semibold text-gray-800 mb-1 pr-8">{selectedPlant['Plant Name']}</h3>
               <p className="text-sm text-gray-500">{selectedPlant['Country']}</p>
+              
+              {/* Tabs */}
+              <div className="flex space-x-4 mt-4">
+                <button
+                  onClick={() => setSelectedPopupTab('details')}
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                    selectedPopupTab === 'details'
+                      ? 'bg-cyan-100 text-cyan-700'
+                      : 'text-gray-500 hover:bg-gray-100'
+                  }`}
+                >
+                  Plant Details
+                </button>
+                <button
+                  onClick={() => setSelectedPopupTab('impact')}
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                    selectedPopupTab === 'impact'
+                      ? 'bg-cyan-100 text-cyan-700'
+                      : 'text-gray-500 hover:bg-gray-100'
+                  }`}
+                >
+                  Impact Data {plantImpacts.length > 0 ? `(${plantImpacts.length})` : ''}
+                </button>
+              </div>
             </div>
             
             {/* Scrollable Content */}
-            <div className="overflow-y-auto px-8 py-6" style={{ maxHeight: 'calc(80vh - 140px)' }}>
-              {/* Basic Info Grid */}
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="space-y-3 text-sm">
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Capacity</p>
-                    <p className="text-base font-semibold text-gray-800">{displayCapacity} MW</p>
-                    {selectedUnit !== 'all' && plantImpacts.length > 1 && (
-                      <p className="text-xs text-gray-500 mt-0.5">Total plant: {selectedPlant['Capacity (MW)']} MW</p>
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Status</p>
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
-                      {selectedPlant['Operational Status']}
-                    </span>
-                  </div>
-                  {selectedPlant['Start year'] && (
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Start Year</p>
-                      <p className="text-base font-semibold text-gray-800">{selectedPlant['Start year']}</p>
+            <div className="overflow-y-auto px-8 py-6" style={{ maxHeight: 'calc(80vh - 180px)' }}>
+              {/* Plant Details Tab */}
+              {selectedPopupTab === 'details' && (
+                <>
+                  {/* Basic Info Grid */}
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    <div className="space-y-3 text-sm">
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Capacity</p>
+                        <p className="text-base font-semibold text-gray-800">{displayCapacity} MW</p>
+                        {selectedUnit !== 'all' && plantImpacts.length > 1 && (
+                          <p className="text-xs text-gray-500 mt-0.5">Total plant: {selectedPlant['Capacity (MW)']} MW</p>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Status</p>
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
+                          {selectedPlant['Operational Status']}
+                        </span>
+                      </div>
+                      {selectedPlant['Start year'] && (
+                        <div>
+                          <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Start Year</p>
+                          <p className="text-base font-semibold text-gray-800">{selectedPlant['Start year']}</p>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-                <div className="space-y-3 text-sm">
-                  {selectedPlant['Operator'] && (
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Operator</p>
-                      <p className="text-base font-medium text-gray-700 leading-tight">{selectedPlant['Operator']}</p>
+                    <div className="space-y-3 text-sm">
+                      {selectedPlant['Operator'] && (
+                        <div>
+                          <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Operator</p>
+                          <p className="text-base font-medium text-gray-700 leading-tight">{selectedPlant['Operator']}</p>
+                        </div>
+                      )}
+                      {selectedPlant['Planned retirement year'] && (
+                        <div>
+                          <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Planned Retirement</p>
+                          <p className="text-base font-semibold text-gray-800">{selectedPlant['Planned retirement year']}</p>
+                        </div>
+                      )}
+                      {selectedPlant['Owner'] && (
+                        <div>
+                          <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Owner</p>
+                          <p className="text-base font-medium text-gray-700 leading-tight">{selectedPlant['Owner']}</p>
+                        </div>
+                      )}
                     </div>
-                  )}
-                  {selectedPlant['Planned retirement year'] && (
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Planned Retirement</p>
-                      <p className="text-base font-semibold text-gray-800">{selectedPlant['Planned retirement year']}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              {/* Impact Statistics */}
-              {plantImpacts.length > 0 && (
-                <div className="mt-6 pt-6 border-t border-cyan-100/50">
-                  {/* Section Header with Unit Selector */}
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h4 className="text-lg font-semibold text-gray-800">Impact Assessment</h4>
-                      <p className="text-xs text-gray-500 mt-0.5">Baseline year: 2025</p>
-                    </div>
-                    
-                    {/* Unit Selector Dropdown */}
-                    {plantImpacts.length > 1 && (
-                      <select
-                        value={selectedUnit}
-                        onChange={(e) => setSelectedUnit(e.target.value)}
-                        className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-cyan-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-400 transition-all duration-200 cursor-pointer hover:border-cyan-300"
-                      >
-                        <option value="all">All Units ({plantImpacts.length})</option>
-                        {plantImpacts.map((impact, idx) => (
-                          <option key={idx} value={impact['Unit name']}>
-                            {impact['Unit name']}
-                          </option>
-                        ))}
-                      </select>
-                    )}
                   </div>
                   
-                  {displayImpact && (
+                  {/* Additional Plant Details */}
+                  <div className="mt-4 pt-4 border-t border-cyan-100/50">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3">Additional Information</h4>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      {selectedPlant['Subnational unit (province, state)'] && (
+                        <div>
+                          <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Region</p>
+                          <p className="text-sm font-medium text-gray-700">{selectedPlant['Subnational unit (province, state)']}</p>
+                        </div>
+                      )}
+                      {selectedPlant['Combustion technology'] && (
+                        <div>
+                          <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Technology</p>
+                          <p className="text-sm font-medium text-gray-700">{selectedPlant['Combustion technology']}</p>
+                        </div>
+                      )}
+                      {selectedPlant['latitude'] && selectedPlant['longitude'] && (
+                        <div>
+                          <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Coordinates</p>
+                          <p className="text-sm font-medium text-gray-700">
+                            {parseFloat(selectedPlant['latitude']).toFixed(4)}, {parseFloat(selectedPlant['longitude']).toFixed(4)}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+              
+              {/* Impact Data Tab */}
+              {selectedPopupTab === 'impact' && (
+                <>
+                  {plantImpacts.length > 0 ? (
                     <>
-                      {/* Currently viewing indicator */}
-                      <div className="mb-4 px-3 py-2 bg-cyan-50/50 border border-cyan-100 rounded-lg">
-                        <p className="text-xs text-gray-600">
-                          <span className="font-medium">Viewing:</span> {displayImpact.unitName}
-                        </p>
+                      {/* Section Header with Unit Selector */}
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h4 className="text-lg font-semibold text-gray-800">Impact Assessment</h4>
+                          <p className="text-xs text-gray-500 mt-0.5">Baseline year: 2025</p>
+                        </div>
+                        
+                        {/* Unit Selector Dropdown */}
+                        {plantImpacts.length > 1 && (
+                          <select
+                            value={selectedUnit}
+                            onChange={(e) => setSelectedUnit(e.target.value)}
+                            className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-cyan-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-400 transition-all duration-200 cursor-pointer hover:border-cyan-300"
+                          >
+                            <option value="all">All Units ({plantImpacts.length})</option>
+                            {plantImpacts.map((impact, idx) => (
+                              <option key={idx} value={impact['Unit name']}>
+                                {impact['Unit name']}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </div>
                       
-                      {/* Metrics Grid */}
-                      <div className="grid grid-cols-2 gap-3">
-                        {/* CO2 Emissions */}
-                        <div className="bg-gradient-to-br from-emerald-50 to-emerald-50/30 p-4 rounded-lg border border-emerald-100/50">
-                          <p className="text-xs font-medium text-emerald-600 uppercase tracking-wide mb-2">CO₂ Avoided</p>
-                          <p className="text-2xl font-bold text-emerald-700">{displayImpact.co2.toFixed(2)}</p>
-                          <p className="text-xs text-emerald-600 mt-0.5">Million Tonnes</p>
-                        </div>
-                        
-                        {/* Deaths Avoided */}
-                        <div className="bg-gradient-to-br from-blue-50 to-blue-50/30 p-4 rounded-lg border border-blue-100/50">
-                          <p className="text-xs font-medium text-blue-600 uppercase tracking-wide mb-2">Lives Saved</p>
-                          <p className="text-2xl font-bold text-blue-700">{displayImpact.deaths.toLocaleString()}</p>
-                          <p className="text-xs text-blue-600 mt-0.5">Deaths Avoided</p>
-                        </div>
-                        
-                        {/* Work Loss Days */}
-                        <div className="bg-gradient-to-br from-purple-50 to-purple-50/30 p-4 rounded-lg border border-purple-100/50">
-                          <p className="text-xs font-medium text-purple-600 uppercase tracking-wide mb-2">Health Impact</p>
-                          <p className="text-2xl font-bold text-purple-700">{displayImpact.wlds.toLocaleString()}</p>
-                          <p className="text-xs text-purple-600 mt-0.5">Work Days Recovered</p>
-                        </div>
-                        
-                        {/* Investment */}
-                        <div className="bg-gradient-to-br from-amber-50 to-amber-50/30 p-4 rounded-lg border border-amber-100/50">
-                          <p className="text-xs font-medium text-amber-600 uppercase tracking-wide mb-2">Investment</p>
-                          <p className="text-2xl font-bold text-amber-700">${displayImpact.investment.toFixed(1)}M</p>
-                          <p className="text-xs text-amber-600 mt-0.5">Total Capital</p>
-                        </div>
-                        
-                        {/* Economic Spillover */}
-                        <div className="bg-gradient-to-br from-orange-50 to-orange-50/30 p-4 rounded-lg border border-orange-100/50">
-                          <p className="text-xs font-medium text-orange-600 uppercase tracking-wide mb-2">Economic Impact</p>
-                          <p className="text-2xl font-bold text-orange-700">${displayImpact.spillover.toFixed(1)}M</p>
-                          <p className="text-xs text-orange-600 mt-0.5">Spillover Effect</p>
-                        </div>
-                        
-                        {/* Customer Savings */}
-                        <div className="bg-gradient-to-br from-cyan-50 to-cyan-50/30 p-4 rounded-lg border border-cyan-100/50">
-                          <p className="text-xs font-medium text-cyan-600 uppercase tracking-wide mb-2">Customer Savings</p>
-                          <p className="text-2xl font-bold text-cyan-700">${displayImpact.savings.toFixed(1)}M</p>
-                          {displayImpact.savingsPercent && (
-                            <p className="text-xs text-cyan-600 mt-0.5">~{displayImpact.savingsPercent}% per kWh</p>
-                          )}
-                        </div>
-                        
-                        {/* Permanent Jobs */}
-                        <div className="bg-gradient-to-br from-teal-50 to-teal-50/30 p-4 rounded-lg border border-teal-100/50">
-                          <p className="text-xs font-medium text-teal-600 uppercase tracking-wide mb-2">Jobs Created</p>
-                          <p className="text-2xl font-bold text-teal-700">{displayImpact.permJobs.toLocaleString()}</p>
-                          <p className="text-xs text-teal-600 mt-0.5">Permanent Positions</p>
-                        </div>
-                        
-                        {/* Temporary Jobs */}
-                        <div className="bg-gradient-to-br from-sky-50 to-sky-50/30 p-4 rounded-lg border border-sky-100/50">
-                          <p className="text-xs font-medium text-sky-600 uppercase tracking-wide mb-2">Temporary Jobs</p>
-                          <p className="text-2xl font-bold text-sky-700">{displayImpact.tempJobs.toLocaleString()}</p>
-                          <p className="text-xs text-sky-600 mt-0.5">Construction Phase</p>
-                        </div>
-                      </div>
+                      {displayImpact && (
+                        <>
+                          {/* Currently viewing indicator */}
+                          <div className="mb-4 px-3 py-2 bg-cyan-50/50 border border-cyan-100 rounded-lg">
+                            <p className="text-xs text-gray-600">
+                              <span className="font-medium">Viewing:</span> {displayImpact.unitName}
+                            </p>
+                          </div>
+                          
+                          {/* Metrics Grid */}
+                          <div className="grid grid-cols-2 gap-3">
+                            {/* CO2 Emissions */}
+                            <div className="bg-gradient-to-br from-emerald-50 to-emerald-50/30 p-4 rounded-lg border border-emerald-100/50">
+                              <p className="text-xs font-medium text-emerald-600 uppercase tracking-wide mb-2">CO₂ Avoided</p>
+                              <p className="text-2xl font-bold text-emerald-700">{displayImpact.co2.toFixed(2)}</p>
+                              <p className="text-xs text-emerald-600 mt-0.5">Million Tonnes</p>
+                            </div>
+                            
+                            {/* Deaths Avoided */}
+                            <div className="bg-gradient-to-br from-blue-50 to-blue-50/30 p-4 rounded-lg border border-blue-100/50">
+                              <p className="text-xs font-medium text-blue-600 uppercase tracking-wide mb-2">Lives Saved</p>
+                              <p className="text-2xl font-bold text-blue-700">{displayImpact.deaths.toLocaleString()}</p>
+                              <p className="text-xs text-blue-600 mt-0.5">Deaths Avoided</p>
+                            </div>
+                            
+                            {/* Work Loss Days */}
+                            <div className="bg-gradient-to-br from-purple-50 to-purple-50/30 p-4 rounded-lg border border-purple-100/50">
+                              <p className="text-xs font-medium text-purple-600 uppercase tracking-wide mb-2">Health Impact</p>
+                              <p className="text-2xl font-bold text-purple-700">{displayImpact.wlds.toLocaleString()}</p>
+                              <p className="text-xs text-purple-600 mt-0.5">Work Days Recovered</p>
+                            </div>
+                            
+                            {/* Investment */}
+                            <div className="bg-gradient-to-br from-amber-50 to-amber-50/30 p-4 rounded-lg border border-amber-100/50">
+                              <p className="text-xs font-medium text-amber-600 uppercase tracking-wide mb-2">Investment</p>
+                              <p className="text-2xl font-bold text-amber-700">${displayImpact.investment.toFixed(1)}M</p>
+                              <p className="text-xs text-amber-600 mt-0.5">Total Capital</p>
+                            </div>
+                            
+                            {/* Economic Spillover */}
+                            <div className="bg-gradient-to-br from-orange-50 to-orange-50/30 p-4 rounded-lg border border-orange-100/50">
+                              <p className="text-xs font-medium text-orange-600 uppercase tracking-wide mb-2">Economic Impact</p>
+                              <p className="text-2xl font-bold text-orange-700">${displayImpact.spillover.toFixed(1)}M</p>
+                              <p className="text-xs text-orange-600 mt-0.5">Spillover Effect</p>
+                            </div>
+                            
+                            {/* Customer Savings */}
+                            <div className="bg-gradient-to-br from-cyan-50 to-cyan-50/30 p-4 rounded-lg border border-cyan-100/50">
+                              <p className="text-xs font-medium text-cyan-600 uppercase tracking-wide mb-2">Customer Savings</p>
+                              <p className="text-2xl font-bold text-cyan-700">${displayImpact.savings.toFixed(1)}M</p>
+                              {displayImpact.savingsPercent && (
+                                <p className="text-xs text-cyan-600 mt-0.5">~{displayImpact.savingsPercent}% per kWh</p>
+                              )}
+                            </div>
+                            
+                            {/* Permanent Jobs */}
+                            <div className="bg-gradient-to-br from-teal-50 to-teal-50/30 p-4 rounded-lg border border-teal-100/50">
+                              <p className="text-xs font-medium text-teal-600 uppercase tracking-wide mb-2">Jobs Created</p>
+                              <p className="text-2xl font-bold text-teal-700">{displayImpact.permJobs.toLocaleString()}</p>
+                              <p className="text-xs text-teal-600 mt-0.5">Permanent Positions</p>
+                            </div>
+                            
+                            {/* Temporary Jobs */}
+                            <div className="bg-gradient-to-br from-sky-50 to-sky-50/30 p-4 rounded-lg border border-sky-100/50">
+                              <p className="text-xs font-medium text-sky-600 uppercase tracking-wide mb-2">Temporary Jobs</p>
+                              <p className="text-2xl font-bold text-sky-700">{displayImpact.tempJobs.toLocaleString()}</p>
+                              <p className="text-xs text-sky-600 mt-0.5">Construction Phase</p>
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </>
+                  ) : (
+                    <div className="text-center py-12">
+                      <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+                        <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                        </svg>
+                      </div>
+                      <h4 className="text-lg font-semibold text-gray-700 mb-2">No Impact Data Available</h4>
+                      <p className="text-sm text-gray-500">Impact assessment data for this plant is not yet available.</p>
+                    </div>
                   )}
-                </div>
+                </>
               )}
             </div>
           </div>

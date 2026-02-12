@@ -19,6 +19,7 @@ const RAG_COLORS = {
   green: 'bg-emerald-500',
   amber: 'bg-amber-500',
   red: 'bg-red-500',
+  closed: 'bg-gray-500',
 };
 
 // Delivery partners
