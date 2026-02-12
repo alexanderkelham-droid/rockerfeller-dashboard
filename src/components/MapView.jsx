@@ -882,66 +882,27 @@ const MapView = ({ userEmail }) => {
       
       {/* Legend */}
       <div className="absolute bottom-6 left-6 bg-white rounded-lg shadow-lg p-4 max-w-xs">
-        <h4 className="font-semibold text-sm mb-3">Power Plant Status</h4>
+        {/* Transaction Status Legend */}
+        <h4 className="font-semibold text-sm mb-3">Transaction Status</h4>
         <div className="space-y-2">
           <div className="flex items-center space-x-2">
-            <div className="w-4 h-4 rounded-full bg-green-500 border-2 border-white"></div>
-            <span className="text-xs">Operating ({
-              mapData.filter(p => p['Operational Status'] === 'Operating').length + 
-              (showAllGlobalPlants ? filteredGlobalPlants.filter(p => p['Operational Status'] === 'Operating').length : 0)
-            })</span>
+            <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent" style={{ borderBottomColor: '#10b981' }}></div>
+            <span className="text-xs">Green ({transactions.filter(t => t.transaction_status === 'green').length})</span>
           </div>
           <div className="flex items-center space-x-2">
-            <div className="w-4 h-4 rounded-full bg-orange-500 border-2 border-white"></div>
-            <span className="text-xs">Retired ({
-              mapData.filter(p => p['Operational Status'] === 'Retired').length + 
-              (showAllGlobalPlants ? filteredGlobalPlants.filter(p => p['Operational Status'] === 'Retired').length : 0)
-            })</span>
+            <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent" style={{ borderBottomColor: '#f59e0b' }}></div>
+            <span className="text-xs">Amber ({transactions.filter(t => t.transaction_status === 'amber').length})</span>
           </div>
           <div className="flex items-center space-x-2">
-            <div className="w-4 h-4 rounded-full bg-blue-500 border-2 border-white"></div>
-            <span className="text-xs">Planning ({
-              mapData.filter(p => p['Operational Status'] === 'Planning').length + 
-              (showAllGlobalPlants ? filteredGlobalPlants.filter(p => p['Operational Status'] === 'Planning').length : 0)
-            })</span>
+            <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent" style={{ borderBottomColor: '#ef4444' }}></div>
+            <span className="text-xs">Red ({transactions.filter(t => t.transaction_status === 'red').length})</span>
           </div>
           <div className="flex items-center space-x-2">
-            <div className="w-4 h-4 rounded-full bg-gray-500 border-2 border-white"></div>
-            <span className="text-xs">Other/Unknown ({
-              mapData.filter(p => !['Operating', 'Retired', 'Planning'].includes(p['Operational Status'])).length + 
-              (showAllGlobalPlants ? filteredGlobalPlants.filter(p => !['Operating', 'Retired', 'Planning'].includes(p['Operational Status'])).length : 0)
-            })</span>
+            <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent" style={{ borderBottomColor: '#6b7280' }}></div>
+            <span className="text-xs">Closed ({transactions.filter(t => t.transaction_status === 'closed').length})</span>
           </div>
         </div>
-        <p className="text-xs text-secondary-500 mt-3">Total: {
-          mapData.length + (showAllGlobalPlants ? filteredGlobalPlants.length : 0)
-        } plants</p>
-        
-        {/* Transaction Status Legend */}
-        {transactions.length > 0 && (
-          <>
-            <h4 className="font-semibold text-sm mt-4 mb-3 pt-3 border-t border-gray-200">Transaction Status</h4>
-            <div className="space-y-2">
-              <div className="flex items-center space-x-2">
-                <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent" style={{ borderBottomColor: '#10b981' }}></div>
-                <span className="text-xs">Green ({transactions.filter(t => t.transaction_status === 'green').length})</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent" style={{ borderBottomColor: '#f59e0b' }}></div>
-                <span className="text-xs">Amber ({transactions.filter(t => t.transaction_status === 'amber').length})</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent" style={{ borderBottomColor: '#ef4444' }}></div>
-                <span className="text-xs">Red ({transactions.filter(t => t.transaction_status === 'red').length})</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent" style={{ borderBottomColor: '#6b7280' }}></div>
-                <span className="text-xs">Closed ({transactions.filter(t => t.transaction_status === 'closed').length})</span>
-              </div>
-            </div>
-            <p className="text-xs text-secondary-500 mt-3">Total: {transactions.length} transactions</p>
-          </>
-        )}
+        <p className="text-xs text-secondary-500 mt-3">Total: {transactions.length} transactions</p>
         
         {/* New Project Button */}
         <button
@@ -1279,6 +1240,256 @@ const MapView = ({ userEmail }) => {
                     </div>
                   )}
                 </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Transaction Details Popup */}
+      {selectedPlant && selectedPlant.isTransaction && (() => {
+        const transaction = selectedPlant.transactionData;
+        const transactionPlants = transaction?.plants || [];
+        
+        // Get status color
+        const statusColors = {
+          green: { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-200' },
+          amber: { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' },
+          red: { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-200' },
+          closed: { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-200' },
+        };
+        const statusStyle = statusColors[transaction?.transaction_status] || statusColors.green;
+        
+        return (
+          <div 
+            className="fixed bg-gradient-to-br from-white to-cyan-50/30 rounded-xl shadow-2xl border border-cyan-100/50 backdrop-blur-sm z-[100] max-h-[80vh] overflow-hidden" 
+            style={{ 
+              width: '680px',
+              top: popupPosition.y !== null ? `calc(80px + ${popupPosition.y}px)` : '80px',
+              left: popupPosition.x !== null ? `calc(50% + ${popupPosition.x}px)` : '50%',
+              transform: popupPosition.x !== null ? 'translateX(-50%)' : 'translateX(-50%)',
+            }}
+          >
+            {/* Draggable Header Bar */}
+            <div 
+              onMouseDown={handlePopupDragStart}
+              onTouchStart={handlePopupDragStart}
+              className="flex items-center justify-center py-1.5 cursor-move hover:bg-cyan-50/50 transition-colors rounded-t-xl border-b border-cyan-100/30"
+            >
+              <div className="w-10 h-1 bg-gray-300 rounded-full"></div>
+            </div>
+            
+            {/* Close button */}
+            <button
+              onClick={() => {
+                if (previousView && map.current) {
+                  map.current.flyTo({
+                    center: previousView.center,
+                    zoom: previousView.zoom,
+                    duration: 1500,
+                    essential: true
+                  });
+                }
+                setSelectedPlant(null);
+                setSelectedUnit('all');
+                setSelectedPopupTab('details');
+              }}
+              className="absolute top-6 right-4 text-gray-400 hover:text-gray-600 transition-colors duration-200 z-10"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            
+            {/* Header Section */}
+            <div className="px-8 pt-4 pb-6 border-b border-cyan-100/50">
+              <div className="flex items-start justify-between pr-8">
+                <div>
+                  <h3 className="text-2xl font-semibold text-gray-800 mb-1">{transaction?.project_name || 'Transaction'}</h3>
+                  <p className="text-sm text-gray-500">{transaction?.country}</p>
+                </div>
+                <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border} border capitalize`}>
+                  {transaction?.transaction_status || 'N/A'}
+                </span>
+              </div>
+              
+              {/* Tabs */}
+              <div className="flex space-x-4 mt-4">
+                <button
+                  onClick={() => setSelectedPopupTab('details')}
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                    selectedPopupTab === 'details'
+                      ? 'bg-cyan-100 text-cyan-700'
+                      : 'text-gray-500 hover:bg-gray-100'
+                  }`}
+                >
+                  Transaction Details
+                </button>
+                <button
+                  onClick={() => setSelectedPopupTab('plants')}
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                    selectedPopupTab === 'plants'
+                      ? 'bg-cyan-100 text-cyan-700'
+                      : 'text-gray-500 hover:bg-gray-100'
+                  }`}
+                >
+                  Coal Plants ({transactionPlants.length || 1})
+                </button>
+                <button
+                  onClick={() => setSelectedPopupTab('impact')}
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                    selectedPopupTab === 'impact'
+                      ? 'bg-cyan-100 text-cyan-700'
+                      : 'text-gray-500 hover:bg-gray-100'
+                  }`}
+                >
+                  Impact Data
+                </button>
+              </div>
+            </div>
+            
+            {/* Scrollable Content */}
+            <div className="overflow-y-auto px-8 py-6" style={{ maxHeight: 'calc(80vh - 180px)' }}>
+              {/* Transaction Details Tab */}
+              {selectedPopupTab === 'details' && (
+                <>
+                  <div className="grid grid-cols-2 gap-6">
+                    {/* Left Column */}
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Transaction Stage</p>
+                        <p className="text-base font-semibold text-gray-800 capitalize">{transaction?.transaction_stage?.replace(/_/g, ' ') || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Expected Signing Date</p>
+                        <p className="text-base font-semibold text-gray-800">{transaction?.expected_signing_date || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Owner</p>
+                        <p className="text-base font-medium text-gray-700">{transaction?.owner || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Capacity</p>
+                        <p className="text-base font-semibold text-gray-800">{transaction?.capacity_mw || 'N/A'} MW</p>
+                      </div>
+                    </div>
+                    
+                    {/* Right Column */}
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Transaction Confidence</p>
+                        <p className="text-base font-semibold text-gray-800">{transaction?.transaction_confidence_rating || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Target Retirement Year</p>
+                        <p className="text-base font-semibold text-gray-800">{transaction?.target_retirement_year || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Initial Retirement Year</p>
+                        <p className="text-base font-semibold text-gray-800">{transaction?.initial_retirement_year || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Project Value</p>
+                        <p className="text-base font-semibold text-gray-800">
+                          {transaction?.project_value 
+                            ? `${transaction?.deal_currency || 'USD'} ${parseFloat(transaction.project_value).toLocaleString()}`
+                            : 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Description */}
+                  {transaction?.project_description && (
+                    <div className="mt-6 pt-6 border-t border-gray-100">
+                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Description</p>
+                      <p className="text-sm text-gray-700 leading-relaxed">{transaction.project_description}</p>
+                    </div>
+                  )}
+                </>
+              )}
+              
+              {/* Coal Plants Tab */}
+              {selectedPopupTab === 'plants' && (
+                <>
+                  {transactionPlants.length > 0 ? (
+                    <div className="space-y-4">
+                      {transactionPlants.map((plant, idx) => (
+                        <div key={plant.id || idx} className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                          <div className="flex items-start justify-between mb-3">
+                            <div>
+                              <h4 className="font-semibold text-gray-800">{plant.plant_name}</h4>
+                              {plant.unit_name && (
+                                <p className="text-sm text-gray-500">Unit: {plant.unit_name}</p>
+                              )}
+                            </div>
+                            <span className="text-xs bg-white px-2 py-1 rounded border border-gray-200 text-gray-600 capitalize">
+                              {plant.operational_status || 'Operating'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-4 text-sm">
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1">Capacity</p>
+                              <p className="font-medium text-gray-800">{plant.capacity_mw || 'N/A'} MW</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1">Country</p>
+                              <p className="font-medium text-gray-800">{plant.country || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1">Start Year</p>
+                              <p className="font-medium text-gray-800">{plant.start_year || 'N/A'}</p>
+                            </div>
+                          </div>
+                          {plant.owner && (
+                            <div className="mt-3 pt-3 border-t border-gray-200">
+                              <p className="text-xs text-gray-500 mb-1">Owner</p>
+                              <p className="text-sm text-gray-700">{plant.owner}</p>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <h4 className="font-semibold text-gray-800">{transaction?.plant_name || 'Plant'}</h4>
+                        </div>
+                        <span className="text-xs bg-white px-2 py-1 rounded border border-gray-200 text-gray-600 capitalize">
+                          {transaction?.operational_status || 'Operating'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-4 text-sm">
+                        <div>
+                          <p className="text-xs text-gray-500 mb-1">Capacity</p>
+                          <p className="font-medium text-gray-800">{transaction?.capacity_mw || 'N/A'} MW</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500 mb-1">Country</p>
+                          <p className="font-medium text-gray-800">{transaction?.country || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500 mb-1">Start Year</p>
+                          <p className="font-medium text-gray-800">{transaction?.start_year || 'N/A'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+              
+              {/* Impact Data Tab */}
+              {selectedPopupTab === 'impact' && (
+                <div className="text-center py-12">
+                  <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+                    <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                  </div>
+                  <h4 className="text-lg font-semibold text-gray-700 mb-2">Impact Data Coming Soon</h4>
+                  <p className="text-sm text-gray-500">Impact assessment data for transactions will be available after analysis is complete.</p>
+                </div>
               )}
             </div>
           </div>
