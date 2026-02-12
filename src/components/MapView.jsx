@@ -743,58 +743,98 @@ const MapView = ({ userEmail }) => {
     return groups;
   };
 
-  // Add coal plant node (grey circle) for a group of transactions
+  // Add coal plant node for a group of transactions
   const addPlantNode = (group) => {
     if (!map.current) return;
     
     const { key, plantName, lat, lng, transactions: groupTxns } = group;
     const count = groupTxns.length;
+    
+    // Determine dominant status color for the ring
+    const statusCounts = {};
+    groupTxns.forEach(t => {
+      const s = t.transaction_status || 'default';
+      statusCounts[s] = (statusCounts[s] || 0) + 1;
+    });
+    const dominantStatus = Object.entries(statusCounts).sort((a, b) => b[1] - a[1])[0][0];
+    const ringColor = TRANSACTION_STATUS_COLORS[dominantStatus] || TRANSACTION_STATUS_COLORS.default;
 
     // Wrapper element for the marker (MapLibre controls transform on this)
     const wrapper = document.createElement('div');
     wrapper.className = 'plant-node-marker';
     wrapper.style.cursor = 'pointer';
     
-    // Inner circle that we scale for hover (avoids conflicting with MapLibre's transform)
+    // Build a compact, professional node
+    const size = count === 1 ? 38 : 44;
     const el = document.createElement('div');
-    el.style.width = '44px';
-    el.style.height = '44px';
+    el.style.width = `${size}px`;
+    el.style.height = `${size}px`;
     el.style.borderRadius = '50%';
-    el.style.background = 'linear-gradient(135deg, #f8fafc, #cbd5e1)';
-    el.style.border = '3px solid #94a3b8';
-    el.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15), inset 0 1px 2px rgba(255,255,255,0.6)';
+    el.style.background = '#1e293b';
+    el.style.border = `3px solid ${ringColor}`;
+    el.style.boxShadow = `0 2px 8px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.1), inset 0 1px 0 rgba(255,255,255,0.08)`;
     el.style.display = 'flex';
     el.style.alignItems = 'center';
     el.style.justifyContent = 'center';
-    el.style.transition = 'transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease';
+    el.style.transition = 'transform 0.15s ease, box-shadow 0.15s ease';
     el.style.position = 'relative';
-    el.style.zIndex = '10';
     
-    // Count badge
-    el.innerHTML = `<span style="
-      font-size: 14px;
-      font-weight: 700;
-      color: #334155;
-      line-height: 1;
-      pointer-events: none;
-    ">${count}</span>`;
+    // Count or icon
+    if (count === 1) {
+      // Single transaction — show a small power icon
+      el.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${ringColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>`;
+    } else {
+      el.innerHTML = `<span style="
+        font-size: 13px;
+        font-weight: 600;
+        color: #f1f5f9;
+        line-height: 1;
+        pointer-events: none;
+        letter-spacing: -0.02em;
+      ">${count}</span>`;
+    }
+    
+    // Multi-status ring segments (tiny colored dots around the ring for multiple statuses)
+    if (count > 1) {
+      groupTxns.forEach((txn, i) => {
+        const dot = document.createElement('div');
+        const angle = (2 * Math.PI * i) / count - Math.PI / 2;
+        const dotRadius = size / 2 + 1;
+        const dx = dotRadius * Math.cos(angle);
+        const dy = dotRadius * Math.sin(angle);
+        const sc = TRANSACTION_STATUS_COLORS[txn.transaction_status] || TRANSACTION_STATUS_COLORS.default;
+        dot.style.cssText = `position:absolute;width:6px;height:6px;border-radius:50%;background:${sc};left:50%;top:50%;transform:translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px));pointer-events:none;box-shadow:0 0 2px rgba(0,0,0,0.4);`;
+        el.appendChild(dot);
+      });
+    }
     
     wrapper.appendChild(el);
+    
+    // Name label below the node
+    const label = document.createElement('div');
+    label.style.cssText = `
+      position:absolute;top:${size/2 + 6}px;left:50%;transform:translateX(-50%);
+      white-space:nowrap;font-size:10px;font-weight:600;color:#1e293b;
+      background:rgba(255,255,255,0.92);padding:1px 6px;border-radius:3px;
+      box-shadow:0 1px 3px rgba(0,0,0,0.15);pointer-events:none;
+      max-width:120px;overflow:hidden;text-overflow:ellipsis;
+      backdrop-filter:blur(4px);letter-spacing:0.01em;
+    `;
+    label.textContent = plantName;
+    wrapper.appendChild(label);
     
     // Tooltip
     wrapper.title = `${plantName} — ${count} transaction${count !== 1 ? 's' : ''}`;
     
-    // Hover effects on the inner circle (not the wrapper MapLibre controls)
+    // Hover
     wrapper.addEventListener('mouseenter', () => {
-      el.style.transform = 'scale(1.15)';
-      el.style.boxShadow = '0 6px 20px rgba(0,0,0,0.25), inset 0 1px 2px rgba(255,255,255,0.6)';
-      el.style.border = '3px solid #64748b';
+      el.style.transform = 'scale(1.12)';
+      el.style.boxShadow = `0 4px 16px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.15), 0 0 12px ${ringColor}40`;
     });
     wrapper.addEventListener('mouseleave', () => {
       if (expandedPlantKeyRef.current !== key) {
         el.style.transform = 'scale(1)';
-        el.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15), inset 0 1px 2px rgba(255,255,255,0.6)';
-        el.style.border = '3px solid #94a3b8';
+        el.style.boxShadow = `0 2px 8px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.1), inset 0 1px 0 rgba(255,255,255,0.08)`;
       }
     });
 
@@ -817,27 +857,30 @@ const MapView = ({ userEmail }) => {
         expandedPlantKeyRef.current = null;
         setExpandedPlantKey(null);
         el.style.transform = 'scale(1)';
-        el.style.border = '3px solid #94a3b8';
-        el.style.background = 'linear-gradient(135deg, #f8fafc, #cbd5e1)';
+        el.style.border = `3px solid ${ringColor}`;
+        el.style.background = '#1e293b';
+        label.style.display = '';
         return;
       }
       
       // Collapse any previously expanded
       clearRadialMarkers();
-      // Reset any previously highlighted node
       document.querySelectorAll('.plant-node-marker').forEach(node => {
         const inner = node.__innerEl || node;
         inner.style.transform = 'scale(1)';
-        inner.style.border = '3px solid #94a3b8';
-        inner.style.background = 'linear-gradient(135deg, #f8fafc, #cbd5e1)';
+        inner.style.background = '#1e293b';
+        // Restore label
+        const lbl = node.querySelector('div[style*="position:absolute"]') || node.lastElementChild;
+        if (lbl && lbl !== inner) lbl.style.display = '';
       });
       
       // Highlight this node
       expandedPlantKeyRef.current = key;
       setExpandedPlantKey(key);
-      el.style.transform = 'scale(1.15)';
-      el.style.border = '3px solid #475569';
-      el.style.background = 'linear-gradient(135deg, #e2e8f0, #94a3b8)';
+      el.style.transform = 'scale(1.1)';
+      el.style.border = `3px solid #f8fafc`;
+      el.style.background = '#334155';
+      label.style.display = 'none'; // Hide label when expanded to reduce clutter
       
       // Create SVG overlay for lines
       const container = map.current.getContainer();
@@ -845,90 +888,78 @@ const MapView = ({ userEmail }) => {
       if (!svg) {
         svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.id = 'radial-lines-svg';
-        svg.style.position = 'absolute';
-        svg.style.top = '0';
-        svg.style.left = '0';
-        svg.style.width = '100%';
-        svg.style.height = '100%';
-        svg.style.pointerEvents = 'none';
-        svg.style.zIndex = '5';
+        svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:5;';
         container.appendChild(svg);
       }
       svg.innerHTML = '';
       
-      // Calculate radial positions for transaction nodes
+      // Calculate radial positions
       const centerPoint = map.current.project([lng, lat]);
-      const radius = 80 + (count * 10); // Expand radius based on count
+      const baseRadius = count === 1 ? 60 : 55 + (count * 14);
+      const radius = Math.min(baseRadius, 160); // cap it
       
       groupTxns.forEach((txn, i) => {
-        const angle = (2 * Math.PI * i) / count - Math.PI / 2; // Start from top
+        const angle = count === 1 ? -Math.PI / 2 : (2 * Math.PI * i) / count - Math.PI / 2;
         const tx = centerPoint.x + radius * Math.cos(angle);
         const ty = centerPoint.y + radius * Math.sin(angle);
         
-        // Draw line from center to transaction node
+        const statusColor = TRANSACTION_STATUS_COLORS[txn.transaction_status] || TRANSACTION_STATUS_COLORS.default;
+        
+        // Subtle line from center to node
         const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         line.setAttribute('x1', centerPoint.x);
         line.setAttribute('y1', centerPoint.y);
-        line.setAttribute('x2', tx);
-        line.setAttribute('y2', ty);
-        
-        const statusColor = TRANSACTION_STATUS_COLORS[txn.transaction_status] || TRANSACTION_STATUS_COLORS.default;
+        line.setAttribute('x2', centerPoint.x); // start at center for animation
+        line.setAttribute('y2', centerPoint.y);
         line.setAttribute('stroke', statusColor);
-        line.setAttribute('stroke-width', '2');
-        line.setAttribute('stroke-opacity', '0.6');
-        line.setAttribute('stroke-dasharray', '4 3');
-        
-        // Animate the line in
-        const length = Math.sqrt(Math.pow(tx - centerPoint.x, 2) + Math.pow(ty - centerPoint.y, 2));
-        line.setAttribute('stroke-dashoffset', length);
-        line.style.transition = 'stroke-dashoffset 0.4s ease';
+        line.setAttribute('stroke-width', '1.5');
+        line.setAttribute('stroke-opacity', '0.35');
         svg.appendChild(line);
         
-        // Trigger animation
+        // Animate line to target
         requestAnimationFrame(() => {
-          line.setAttribute('stroke-dasharray', `${length}`);
-          line.setAttribute('stroke-dashoffset', '0');
+          line.style.transition = 'all 0.3s ease';
+          line.setAttribute('x2', tx);
+          line.setAttribute('y2', ty);
         });
         
-        // Create transaction node (smaller colored circle)
+        // Transaction card (not just a circle — a mini pill)
         const txnEl = document.createElement('div');
-        txnEl.className = 'transaction-radial-node';
-        txnEl.style.width = '32px';
-        txnEl.style.height = '32px';
-        txnEl.style.borderRadius = '50%';
-        txnEl.style.backgroundColor = statusColor;
-        txnEl.style.border = '2px solid white';
-        txnEl.style.boxShadow = '0 3px 8px rgba(0,0,0,0.25)';
-        txnEl.style.cursor = 'pointer';
-        txnEl.style.display = 'flex';
-        txnEl.style.alignItems = 'center';
-        txnEl.style.justifyContent = 'center';
-        txnEl.style.transition = 'all 0.2s ease';
-        txnEl.style.opacity = '0';
-        txnEl.style.transform = 'scale(0.3)';
-        txnEl.style.position = 'absolute';
-        txnEl.style.zIndex = '15';
+        txnEl.style.cssText = `
+          display:flex;align-items:center;gap:6px;
+          background:#fff;border-radius:20px;
+          padding:4px 10px 4px 4px;
+          box-shadow:0 2px 10px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.05);
+          cursor:pointer;
+          opacity:0;transform:scale(0.5);
+          transition:all 0.2s ease;
+          white-space:nowrap;max-width:200px;
+          position:relative;z-index:15;
+        `;
         
-        // Status initial letter
-        const statusInitial = (txn.transaction_status || 'N')[0].toUpperCase();
-        txnEl.innerHTML = `<span style="
-          font-size: 11px;
-          font-weight: 700;
-          color: white;
-          pointer-events: none;
-          text-shadow: 0 1px 2px rgba(0,0,0,0.3);
-        ">${statusInitial}</span>`;
+        // Status dot
+        const dot = document.createElement('div');
+        dot.style.cssText = `width:22px;height:22px;border-radius:50%;background:${statusColor};flex-shrink:0;display:flex;align-items:center;justify-content:center;`;
+        const statusInitial = (txn.transaction_status || '?')[0].toUpperCase();
+        dot.innerHTML = `<span style="font-size:10px;font-weight:700;color:#fff;pointer-events:none;">${statusInitial}</span>`;
+        txnEl.appendChild(dot);
+        
+        // Project name text
+        const nameSpan = document.createElement('span');
+        nameSpan.style.cssText = 'font-size:11px;font-weight:500;color:#334155;overflow:hidden;text-overflow:ellipsis;pointer-events:none;';
+        nameSpan.textContent = txn.project_name || txn.plant_name || 'Transaction';
+        txnEl.appendChild(nameSpan);
         
         txnEl.title = `${txn.project_name || 'Transaction'} — ${txn.transaction_status || 'No status'}`;
         
         // Hover
         txnEl.addEventListener('mouseenter', () => {
-          txnEl.style.transform = 'scale(1.25)';
-          txnEl.style.boxShadow = '0 4px 14px rgba(0,0,0,0.35)';
+          txnEl.style.transform = 'scale(1.06)';
+          txnEl.style.boxShadow = `0 4px 16px rgba(0,0,0,0.22), 0 0 0 2px ${statusColor}50`;
         });
         txnEl.addEventListener('mouseleave', () => {
           txnEl.style.transform = 'scale(1)';
-          txnEl.style.boxShadow = '0 3px 8px rgba(0,0,0,0.25)';
+          txnEl.style.boxShadow = '0 2px 10px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.05)';
         });
         
         // Click — show transaction popup
@@ -960,21 +991,17 @@ const MapView = ({ userEmail }) => {
           setSelectedPopupTab('details');
         });
 
-        // Position the transaction node as a fixed overlay element
+        // Position as overlay
         const txnWrapper = document.createElement('div');
-        txnWrapper.style.position = 'absolute';
-        txnWrapper.style.left = `${tx}px`;
-        txnWrapper.style.top = `${ty}px`;
-        txnWrapper.style.transform = 'translate(-50%, -50%)';
-        txnWrapper.style.zIndex = '15';
+        txnWrapper.style.cssText = `position:absolute;left:${tx}px;top:${ty}px;transform:translate(-50%,-50%);z-index:15;`;
         txnWrapper.appendChild(txnEl);
         container.appendChild(txnWrapper);
         
-        // Animate in with delay
+        // Staggered animate in
         setTimeout(() => {
           txnEl.style.opacity = '1';
           txnEl.style.transform = 'scale(1)';
-        }, 50 + i * 60);
+        }, 40 + i * 50);
         
         radialMarkersRef.current.push(txnWrapper);
       });
