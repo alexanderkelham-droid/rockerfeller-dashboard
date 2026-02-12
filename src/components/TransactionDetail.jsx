@@ -188,6 +188,12 @@ const TransactionDetail = ({
     return () => clearTimeout(timeoutId);
   }, [plantSearchQuery, showPlantDropdown]);
 
+  // Calculate total capacity from plants array
+  const calculateTotalCapacity = (plants) => {
+    if (!plants || plants.length === 0) return '';
+    return plants.reduce((sum, p) => sum + (parseFloat(p.capacity_mw) || 0), 0);
+  };
+
   // Handle plant selection from search - adds to plants array
   const handleSelectPlant = (plant) => {
     const newPlant = {
@@ -203,17 +209,27 @@ const TransactionDetail = ({
       gem_id: plant.gem_unit_phase_id || '',
     };
     
-    // Add to plants array
-    setFormData(prev => ({
-      ...prev,
-      plants: [...(prev.plants || []), newPlant],
-      // Also set as primary plant if first one
-      plant_name: prev.plants?.length === 0 ? plant.plant_name : prev.plant_name,
-      country: prev.plants?.length === 0 ? plant.country_area : prev.country,
-      location_coordinates: prev.plants?.length === 0 && plant.latitude && plant.longitude 
-        ? `${plant.latitude}, ${plant.longitude}` 
-        : prev.location_coordinates,
-    }));
+    // Add to plants array and calculate aggregated values
+    setFormData(prev => {
+      const updatedPlants = [...(prev.plants || []), newPlant];
+      const totalCapacity = calculateTotalCapacity(updatedPlants);
+      const uniqueCountries = [...new Set(updatedPlants.map(p => p.country).filter(Boolean))];
+      
+      return {
+        ...prev,
+        plants: updatedPlants,
+        // Auto-calculate aggregated capacity
+        capacity_mw: totalCapacity,
+        // Set primary plant name if first one, otherwise keep project name
+        plant_name: prev.plants?.length === 0 ? plant.plant_name : prev.plant_name,
+        // Show all unique countries
+        country: uniqueCountries.length === 1 ? uniqueCountries[0] : uniqueCountries.join(', '),
+        // Use first plant's coordinates for map marker
+        location_coordinates: prev.plants?.length === 0 && plant.latitude && plant.longitude 
+          ? `${plant.latitude}, ${plant.longitude}` 
+          : prev.location_coordinates,
+      };
+    });
     setPlantSearchQuery('');
     setShowPlantDropdown(false);
     setPlantSearchResults([]);
@@ -221,10 +237,20 @@ const TransactionDetail = ({
 
   // Remove plant from array
   const handleRemovePlant = (plantId) => {
-    setFormData(prev => ({
-      ...prev,
-      plants: prev.plants.filter(p => p.id !== plantId),
-    }));
+    setFormData(prev => {
+      const updatedPlants = prev.plants.filter(p => p.id !== plantId);
+      const totalCapacity = calculateTotalCapacity(updatedPlants);
+      const uniqueCountries = [...new Set(updatedPlants.map(p => p.country).filter(Boolean))];
+      
+      return {
+        ...prev,
+        plants: updatedPlants,
+        // Recalculate aggregated capacity
+        capacity_mw: totalCapacity || '',
+        // Update country list
+        country: uniqueCountries.length === 1 ? uniqueCountries[0] : uniqueCountries.join(', '),
+      };
+    });
   };
 
   const fetchActivities = async (transactionId) => {
@@ -849,8 +875,20 @@ const TransactionDetail = ({
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Capacity (MW)</label>
-                  <input type="number" name="capacity_mw" value={formData.capacity_mw || ''} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+                  <label className="block text-xs text-gray-500 mb-1">
+                    Total Capacity (MW)
+                    {formData.plants?.length > 0 && (
+                      <span className="ml-1 text-cyan-600 font-normal">(auto-calculated)</span>
+                    )}
+                  </label>
+                  <input 
+                    type="number" 
+                    name="capacity_mw" 
+                    value={formData.capacity_mw || ''} 
+                    onChange={handleChange} 
+                    readOnly={formData.plants?.length > 0}
+                    className={`w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 ${formData.plants?.length > 0 ? 'bg-gray-50 text-gray-600' : ''}`}
+                  />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Start Year</label>
