@@ -78,7 +78,12 @@ const MapView = ({ userEmail }) => {
   const [provisionalMarker, setProvisionalMarker] = useState(null); // Store provisional marker reference
   const provisionalMarkerRef = useRef(null); // Ref for provisional marker DOM element
   const [transactions, setTransactions] = useState([]); // Store CRM transactions
-  const [selectedPopupTab, setSelectedPopupTab] = useState('details'); // 'details' or 'impact'
+  const [selectedPopupTab, setSelectedPopupTab] = useState('details'); // 'details', 'plants', or 'impact'
+  const [expandedPlantKey, setExpandedPlantKey] = useState(null); // Track which coal plant node is expanded
+  const expandedPlantKeyRef = useRef(null); // Ref to avoid stale closures
+  const radialMarkersRef = useRef([]); // Store radial transaction markers and lines
+  const radialLinesRef = useRef([]); // Store SVG line elements
+  const moveHandlerRef = useRef(null); // Store map move handler for cleanup
   
   // Popup drag state
   const [popupPosition, setPopupPosition] = useState({ x: null, y: null }); // null means use default centered position
@@ -708,95 +713,317 @@ const MapView = ({ userEmail }) => {
     setMarkers(prev => [...prev, marker]);
   };
 
-  // Add transaction markers as triangles with status colors
-  const addTransactionMarker = (transaction) => {
+  // Clean up radial markers and lines
+  const clearRadialMarkers = () => {
+    radialMarkersRef.current.forEach(m => m.remove());
+    radialMarkersRef.current = [];
+    // Remove SVG overlay if it exists
+    const svg = document.getElementById('radial-lines-svg');
+    if (svg) svg.remove();
+    // Remove map move handler
+    if (moveHandlerRef.current && map.current) {
+      map.current.off('move', moveHandlerRef.current);
+      map.current.off('zoom', moveHandlerRef.current);
+      moveHandlerRef.current = null;
+    }
+  };
+
+  // Group transactions by plant location key
+  const getPlantGroups = (txns) => {
+    const groups = {};
+    txns.forEach(t => {
+      const coords = t.location_coordinates;
+      if (!coords) return;
+      const [lat, lng] = coords.split(',').map(s => parseFloat(s?.trim()));
+      if (isNaN(lat) || isNaN(lng)) return;
+      
+      // Use plant_name + rounded coords as grouping key
+      const key = `${(t.plant_name || t.project_name || '').toLowerCase().trim()}_${lat.toFixed(3)}_${lng.toFixed(3)}`;
+      if (!groups[key]) {
+        groups[key] = {
+          key,
+          plantName: t.plant_name || t.project_name || 'Unknown Plant',
+          lat, lng,
+          transactions: [],
+        };
+      }
+      groups[key].transactions.push(t);
+    });
+    return groups;
+  };
+
+  // Add coal plant node (grey circle) for a group of transactions
+  const addPlantNode = (group) => {
     if (!map.current) return;
     
-    // Parse coordinates from location_coordinates field
-    const coords = transaction.location_coordinates;
-    if (!coords) return;
-    
-    const [lat, lng] = coords.split(',').map(s => parseFloat(s?.trim()));
-    if (isNaN(lat) || isNaN(lng)) return;
+    const { key, plantName, lat, lng, transactions: groupTxns } = group;
+    const count = groupTxns.length;
 
-    // Create triangle marker element
+    // Create circular marker
     const el = document.createElement('div');
-    el.className = 'transaction-marker';
-    el.style.width = '0';
-    el.style.height = '0';
-    el.style.borderLeft = '12px solid transparent';
-    el.style.borderRight = '12px solid transparent';
-    el.style.borderBottom = '20px solid';
-    el.style.position = 'absolute';
-    el.style.transform = 'translate(-50%, -100%)';
+    el.className = 'plant-node-marker';
+    el.style.width = '44px';
+    el.style.height = '44px';
+    el.style.borderRadius = '50%';
+    el.style.background = 'linear-gradient(135deg, #f8fafc, #cbd5e1)';
+    el.style.border = '3px solid #94a3b8';
+    el.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15), inset 0 1px 2px rgba(255,255,255,0.6)';
     el.style.cursor = 'pointer';
+    el.style.display = 'flex';
+    el.style.alignItems = 'center';
+    el.style.justifyContent = 'center';
+    el.style.transition = 'all 0.2s ease';
+    el.style.position = 'relative';
+    el.style.zIndex = '10';
     
-    // Color based on transaction status
-    const statusColor = TRANSACTION_STATUS_COLORS[transaction.transaction_status] || TRANSACTION_STATUS_COLORS.default;
-    el.style.borderBottomColor = statusColor;
-    el.style.filter = 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))';
+    // Count badge
+    el.innerHTML = `<span style="
+      font-size: 14px;
+      font-weight: 700;
+      color: #334155;
+      line-height: 1;
+      pointer-events: none;
+    ">${count}</span>`;
     
-    // Store transaction data
-    el.__transactionData = transaction;
-    el.__isTransaction = true;
+    // Tooltip
+    el.title = `${plantName} — ${count} transaction${count !== 1 ? 's' : ''}`;
     
     // Hover effects
     el.addEventListener('mouseenter', () => {
-      el.style.borderLeft = '14px solid transparent';
-      el.style.borderRight = '14px solid transparent';
-      el.style.borderBottom = '24px solid';
-      el.style.borderBottomColor = statusColor;
-      el.style.filter = 'drop-shadow(0 3px 6px rgba(0,0,0,0.4))';
+      el.style.transform = 'scale(1.15)';
+      el.style.boxShadow = '0 6px 20px rgba(0,0,0,0.25), inset 0 1px 2px rgba(255,255,255,0.6)';
+      el.style.border = '3px solid #64748b';
     });
     el.addEventListener('mouseleave', () => {
-      el.style.borderLeft = '12px solid transparent';
-      el.style.borderRight = '12px solid transparent';
-      el.style.borderBottom = '20px solid';
-      el.style.borderBottomColor = statusColor;
-      el.style.filter = 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))';
+      if (expandedPlantKey !== key) {
+        el.style.transform = 'scale(1)';
+        el.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15), inset 0 1px 2px rgba(255,255,255,0.6)';
+        el.style.border = '3px solid #94a3b8';
+      }
     });
 
-    // Create marker
-    const marker = new maplibregl.Marker({ element: el })
+    const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
       .setLngLat([lng, lat])
       .addTo(map.current);
 
     marker._element = el;
+    el.__plantGroupKey = key;
+    el.__plantGroup = group;
 
-    // Click handler - show transaction details
-    el.addEventListener('click', () => {
-      const currentCenter = map.current.getCenter();
-      const currentZoom = map.current.getZoom();
-      setPreviousView({ center: [currentCenter.lng, currentCenter.lat], zoom: currentZoom });
+    // Click handler — expand/collapse radial
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
       
-      // Create a plant-like object for the popup
-      const plantData = {
-        'Plant Name': transaction.plant_name || transaction.project_name,
-        'Country': transaction.country,
-        'Capacity (MW)': transaction.capacity_mw,
-        'Operational Status': transaction.operational_status || 'Operating',
-        'Owner': transaction.owner,
-        'Start year': transaction.start_year,
-        latitude: lat,
-        longitude: lng,
-        isTransaction: true,
-        transactionData: transaction,
+      if (expandedPlantKeyRef.current === key) {
+        // Collapse
+        clearRadialMarkers();
+        expandedPlantKeyRef.current = null;
+        setExpandedPlantKey(null);
+        el.style.transform = 'scale(1)';
+        el.style.border = '3px solid #94a3b8';
+        el.style.background = 'linear-gradient(135deg, #f8fafc, #cbd5e1)';
+        return;
+      }
+      
+      // Collapse any previously expanded
+      clearRadialMarkers();
+      // Reset any previously highlighted node
+      document.querySelectorAll('.plant-node-marker').forEach(node => {
+        node.style.transform = 'scale(1)';
+        node.style.border = '3px solid #94a3b8';
+        node.style.background = 'linear-gradient(135deg, #f8fafc, #cbd5e1)';
+      });
+      
+      // Highlight this node
+      expandedPlantKeyRef.current = key;
+      setExpandedPlantKey(key);
+      el.style.transform = 'scale(1.15)';
+      el.style.border = '3px solid #475569';
+      el.style.background = 'linear-gradient(135deg, #e2e8f0, #94a3b8)';
+      
+      // Create SVG overlay for lines
+      const container = map.current.getContainer();
+      let svg = document.getElementById('radial-lines-svg');
+      if (!svg) {
+        svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.id = 'radial-lines-svg';
+        svg.style.position = 'absolute';
+        svg.style.top = '0';
+        svg.style.left = '0';
+        svg.style.width = '100%';
+        svg.style.height = '100%';
+        svg.style.pointerEvents = 'none';
+        svg.style.zIndex = '5';
+        container.appendChild(svg);
+      }
+      svg.innerHTML = '';
+      
+      // Calculate radial positions for transaction nodes
+      const centerPoint = map.current.project([lng, lat]);
+      const radius = 80 + (count * 10); // Expand radius based on count
+      
+      groupTxns.forEach((txn, i) => {
+        const angle = (2 * Math.PI * i) / count - Math.PI / 2; // Start from top
+        const tx = centerPoint.x + radius * Math.cos(angle);
+        const ty = centerPoint.y + radius * Math.sin(angle);
+        
+        // Draw line from center to transaction node
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', centerPoint.x);
+        line.setAttribute('y1', centerPoint.y);
+        line.setAttribute('x2', tx);
+        line.setAttribute('y2', ty);
+        
+        const statusColor = TRANSACTION_STATUS_COLORS[txn.transaction_status] || TRANSACTION_STATUS_COLORS.default;
+        line.setAttribute('stroke', statusColor);
+        line.setAttribute('stroke-width', '2');
+        line.setAttribute('stroke-opacity', '0.6');
+        line.setAttribute('stroke-dasharray', '4 3');
+        
+        // Animate the line in
+        const length = Math.sqrt(Math.pow(tx - centerPoint.x, 2) + Math.pow(ty - centerPoint.y, 2));
+        line.setAttribute('stroke-dashoffset', length);
+        line.style.transition = 'stroke-dashoffset 0.4s ease';
+        svg.appendChild(line);
+        
+        // Trigger animation
+        requestAnimationFrame(() => {
+          line.setAttribute('stroke-dasharray', `${length}`);
+          line.setAttribute('stroke-dashoffset', '0');
+        });
+        
+        // Create transaction node (smaller colored circle)
+        const txnEl = document.createElement('div');
+        txnEl.className = 'transaction-radial-node';
+        txnEl.style.width = '32px';
+        txnEl.style.height = '32px';
+        txnEl.style.borderRadius = '50%';
+        txnEl.style.backgroundColor = statusColor;
+        txnEl.style.border = '2px solid white';
+        txnEl.style.boxShadow = '0 3px 8px rgba(0,0,0,0.25)';
+        txnEl.style.cursor = 'pointer';
+        txnEl.style.display = 'flex';
+        txnEl.style.alignItems = 'center';
+        txnEl.style.justifyContent = 'center';
+        txnEl.style.transition = 'all 0.2s ease';
+        txnEl.style.opacity = '0';
+        txnEl.style.transform = 'scale(0.3)';
+        txnEl.style.position = 'absolute';
+        txnEl.style.zIndex = '15';
+        
+        // Status initial letter
+        const statusInitial = (txn.transaction_status || 'N')[0].toUpperCase();
+        txnEl.innerHTML = `<span style="
+          font-size: 11px;
+          font-weight: 700;
+          color: white;
+          pointer-events: none;
+          text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        ">${statusInitial}</span>`;
+        
+        txnEl.title = `${txn.project_name || 'Transaction'} — ${txn.transaction_status || 'No status'}`;
+        
+        // Hover
+        txnEl.addEventListener('mouseenter', () => {
+          txnEl.style.transform = 'scale(1.25)';
+          txnEl.style.boxShadow = '0 4px 14px rgba(0,0,0,0.35)';
+        });
+        txnEl.addEventListener('mouseleave', () => {
+          txnEl.style.transform = 'scale(1)';
+          txnEl.style.boxShadow = '0 3px 8px rgba(0,0,0,0.25)';
+        });
+        
+        // Click — show transaction popup
+        txnEl.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          
+          const currentCenter = map.current.getCenter();
+          const currentZoom = map.current.getZoom();
+          setPreviousView({ center: [currentCenter.lng, currentCenter.lat], zoom: currentZoom });
+          
+          const [tLat, tLng] = txn.location_coordinates.split(',').map(s => parseFloat(s?.trim()));
+          
+          const plantData = {
+            'Plant Name': txn.plant_name || txn.project_name,
+            'Country': txn.country,
+            'Capacity (MW)': txn.capacity_mw,
+            'Operational Status': txn.operational_status || 'Operating',
+            'Owner': txn.owner,
+            'Start year': txn.start_year,
+            latitude: tLat,
+            longitude: tLng,
+            isTransaction: true,
+            transactionData: txn,
+          };
+          
+          setSelectedPlant(plantData);
+          setSelectedPlantProjects([]);
+          setSelectedUnit('all');
+          setSelectedPopupTab('details');
+        });
+
+        // Position the transaction node as a fixed overlay element
+        const txnWrapper = document.createElement('div');
+        txnWrapper.style.position = 'absolute';
+        txnWrapper.style.left = `${tx}px`;
+        txnWrapper.style.top = `${ty}px`;
+        txnWrapper.style.transform = 'translate(-50%, -50%)';
+        txnWrapper.style.zIndex = '15';
+        txnWrapper.appendChild(txnEl);
+        container.appendChild(txnWrapper);
+        
+        // Animate in with delay
+        setTimeout(() => {
+          txnEl.style.opacity = '1';
+          txnEl.style.transform = 'scale(1)';
+        }, 50 + i * 60);
+        
+        radialMarkersRef.current.push(txnWrapper);
+      });
+
+      // Update positions when map moves
+      const updatePositions = () => {
+        const newCenter = map.current.project([lng, lat]);
+        const svgEl = document.getElementById('radial-lines-svg');
+        
+        groupTxns.forEach((txn, i) => {
+          const angle = (2 * Math.PI * i) / count - Math.PI / 2;
+          const newTx = newCenter.x + radius * Math.cos(angle);
+          const newTy = newCenter.y + radius * Math.sin(angle);
+          
+          // Update wrapper position
+          const wrapper = radialMarkersRef.current[i];
+          if (wrapper) {
+            wrapper.style.left = `${newTx}px`;
+            wrapper.style.top = `${newTy}px`;
+          }
+          
+          // Update line
+          if (svgEl && svgEl.children[i]) {
+            svgEl.children[i].setAttribute('x1', newCenter.x);
+            svgEl.children[i].setAttribute('y1', newCenter.y);
+            svgEl.children[i].setAttribute('x2', newTx);
+            svgEl.children[i].setAttribute('y2', newTy);
+          }
+        });
       };
       
-      setSelectedPlant(plantData);
-      setSelectedPlantProjects([]);
-      setSelectedUnit('all');
-      setSelectedPopupTab('details');
-      
-      map.current.flyTo({
-        center: [lng, lat],
-        zoom: 10,
-        duration: 1500,
-        essential: true
-      });
+      moveHandlerRef.current = updatePositions;
+      map.current.on('move', updatePositions);
+      map.current.on('zoom', updatePositions);
     });
 
     setMarkers(prev => [...prev, marker]);
+  };
+
+  // Add transaction markers grouped by plant location
+  const addTransactionMarkers = () => {
+    if (!map.current || transactions.length === 0) return;
+    
+    const groups = getPlantGroups(transactions);
+    Object.values(groups).forEach(group => {
+      addPlantNode(group);
+    });
   };
 
   useEffect(() => {
@@ -817,10 +1044,8 @@ const MapView = ({ userEmail }) => {
         addMarkerToMap(plant, false);
       });
       
-      // Add transaction markers (triangles with status colors)
-      transactions.forEach((transaction) => {
-        addTransactionMarker(transaction);
-      });
+      // Add transaction markers (grouped as plant nodes with radial expansion)
+      addTransactionMarkers();
 
       // Add navigation controls
       map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
@@ -880,34 +1105,11 @@ const MapView = ({ userEmail }) => {
         impactResults={impactResults}
       />
       
-      {/* Legend */}
-      <div className="absolute bottom-6 left-6 bg-white rounded-lg shadow-lg p-4 max-w-xs">
-        {/* Transaction Status Legend */}
-        <h4 className="font-semibold text-sm mb-3">Transaction Status</h4>
-        <div className="space-y-2">
-          <div className="flex items-center space-x-2">
-            <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent" style={{ borderBottomColor: '#10b981' }}></div>
-            <span className="text-xs">Green ({transactions.filter(t => t.transaction_status === 'green').length})</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent" style={{ borderBottomColor: '#f59e0b' }}></div>
-            <span className="text-xs">Amber ({transactions.filter(t => t.transaction_status === 'amber').length})</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent" style={{ borderBottomColor: '#ef4444' }}></div>
-            <span className="text-xs">Red ({transactions.filter(t => t.transaction_status === 'red').length})</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent" style={{ borderBottomColor: '#6b7280' }}></div>
-            <span className="text-xs">Closed ({transactions.filter(t => t.transaction_status === 'closed').length})</span>
-          </div>
-        </div>
-        <p className="text-xs text-secondary-500 mt-3">Total: {transactions.length} transactions</p>
-        
-        {/* New Project Button */}
+      {/* New Project Button */}
+      <div className="absolute bottom-6 left-6">
         <button
           onClick={() => setShowCreateProject(true)}
-          className="mt-4 w-full bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+          className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-lg"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
