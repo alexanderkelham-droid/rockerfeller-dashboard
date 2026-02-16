@@ -725,28 +725,78 @@ const MapView = ({ userEmail }) => {
     }
   };
 
-  // Group transactions by plant location key
+  // Group transactions by plant location - now handles multi-plant portfolios
   const getPlantGroups = (txns) => {
     const groups = {};
+    const portfolioConnections = []; // Store connections between plants in same portfolio
+    
     txns.forEach(t => {
-      const coords = t.location_coordinates;
-      if (!coords) return;
-      const [lat, lng] = coords.split(',').map(s => parseFloat(s?.trim()));
-      if (isNaN(lat) || isNaN(lng)) return;
+      const plants = t.plants || [];
+      const plantsWithCoords = [];
       
-      // Use plant_name + rounded coords as grouping key
-      const key = `${(t.plant_name || t.project_name || '').toLowerCase().trim()}_${lat.toFixed(3)}_${lng.toFixed(3)}`;
-      if (!groups[key]) {
-        groups[key] = {
-          key,
-          plantName: t.plant_name || t.project_name || 'Unknown Plant',
-          lat, lng,
-          transactions: [],
-        };
+      // If transaction has plants array with coordinates, use those
+      if (plants.length > 0) {
+        plants.forEach(plant => {
+          // Check if plant has coordinates
+          let lat, lng;
+          if (plant.location_coordinates) {
+            [lat, lng] = plant.location_coordinates.split(',').map(s => parseFloat(s?.trim()));
+          } else if (plant.latitude && plant.longitude) {
+            lat = parseFloat(plant.latitude);
+            lng = parseFloat(plant.longitude);
+          }
+          
+          if (!isNaN(lat) && !isNaN(lng)) {
+            plantsWithCoords.push({ plant, lat, lng });
+            
+            // Use plant_name + coords as grouping key
+            const key = `${(plant.plant_name || '').toLowerCase().trim()}_${lat.toFixed(3)}_${lng.toFixed(3)}`;
+            if (!groups[key]) {
+              groups[key] = {
+                key,
+                plantName: plant.plant_name || 'Unknown Plant',
+                lat, lng,
+                transactions: [],
+              };
+            }
+            // Add the transaction with reference to this specific plant
+            groups[key].transactions.push({
+              ...t,
+              _displayPlant: plant, // Reference to which plant this marker represents
+            });
+          }
+        });
+        
+        // If portfolio has multiple plants with coords, create connections
+        if (plantsWithCoords.length > 1) {
+          portfolioConnections.push({
+            transactionId: t.id,
+            projectName: t.project_name,
+            status: t.transaction_status,
+            plants: plantsWithCoords,
+          });
+        }
+      } else {
+        // Fallback to transaction's location_coordinates
+        const coords = t.location_coordinates;
+        if (!coords) return;
+        const [lat, lng] = coords.split(',').map(s => parseFloat(s?.trim()));
+        if (isNaN(lat) || isNaN(lng)) return;
+        
+        const key = `${(t.plant_name || t.project_name || '').toLowerCase().trim()}_${lat.toFixed(3)}_${lng.toFixed(3)}`;
+        if (!groups[key]) {
+          groups[key] = {
+            key,
+            plantName: t.plant_name || t.project_name || 'Unknown Plant',
+            lat, lng,
+            transactions: [],
+          };
+        }
+        groups[key].transactions.push(t);
       }
-      groups[key].transactions.push(t);
     });
-    return groups;
+    
+    return { groups, portfolioConnections };
   };
 
   // Add coal plant node for a group of transactions
@@ -1047,14 +1097,90 @@ const MapView = ({ userEmail }) => {
     setMarkers(prev => [...prev, marker]);
   };
 
+  // Store portfolio connection lines ref
+  const portfolioLinesRef = useRef([]);
+
+  // Draw portfolio connection lines on map
+  const drawPortfolioConnections = (connections) => {
+    if (!map.current) return;
+    
+    // Clear existing portfolio lines
+    portfolioLinesRef.current.forEach(line => {
+      if (line.layerId && map.current.getLayer(line.layerId)) {
+        map.current.removeLayer(line.layerId);
+      }
+      if (line.sourceId && map.current.getSource(line.sourceId)) {
+        map.current.removeSource(line.sourceId);
+      }
+    });
+    portfolioLinesRef.current = [];
+    
+    connections.forEach((conn, idx) => {
+      if (conn.plants.length < 2) return;
+      
+      const statusColor = TRANSACTION_STATUS_COLORS[conn.status] || TRANSACTION_STATUS_COLORS.default;
+      
+      // Create line coordinates connecting all plants in this portfolio
+      const coordinates = conn.plants.map(p => [p.lng, p.lat]);
+      
+      // For more than 2 plants, connect them in sequence and close the loop
+      if (coordinates.length > 2) {
+        coordinates.push(coordinates[0]); // Close the loop
+      }
+      
+      const sourceId = `portfolio-line-source-${idx}`;
+      const layerId = `portfolio-line-layer-${idx}`;
+      
+      // Add line source
+      map.current.addSource(sourceId, {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          properties: {
+            transactionId: conn.transactionId,
+            projectName: conn.projectName,
+          },
+          geometry: {
+            type: 'LineString',
+            coordinates: coordinates,
+          },
+        },
+      });
+      
+      // Add line layer with dashed style
+      map.current.addLayer({
+        id: layerId,
+        type: 'line',
+        source: sourceId,
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round',
+        },
+        paint: {
+          'line-color': statusColor,
+          'line-width': 2,
+          'line-opacity': 0.6,
+          'line-dasharray': [4, 4],
+        },
+      });
+      
+      portfolioLinesRef.current.push({ sourceId, layerId });
+    });
+  };
+
   // Add transaction markers grouped by plant location
   const addTransactionMarkers = () => {
     if (!map.current || transactions.length === 0) return;
     
-    const groups = getPlantGroups(transactions);
+    const { groups, portfolioConnections } = getPlantGroups(transactions);
     Object.values(groups).forEach(group => {
       addPlantNode(group);
     });
+    
+    // Draw lines connecting plants in the same portfolio
+    if (portfolioConnections.length > 0) {
+      drawPortfolioConnections(portfolioConnections);
+    }
   };
 
   useEffect(() => {
@@ -1079,12 +1205,30 @@ const MapView = ({ userEmail }) => {
       // Add fullscreen control
       map.current.addControl(new maplibregl.FullscreenControl(), 'top-right');
 
-      // Fit bounds to show all transaction markers
+      // Fit bounds to show all transaction markers (including portfolio plants)
       if (transactions.length > 0) {
         const bounds = new maplibregl.LngLatBounds();
         let hasValidBounds = false;
+        
         transactions.forEach(t => {
-          if (t.location_coordinates) {
+          // Check plants array first for portfolio transactions
+          const plants = t.plants || [];
+          if (plants.length > 0) {
+            plants.forEach(plant => {
+              let lat, lng;
+              if (plant.location_coordinates) {
+                [lat, lng] = plant.location_coordinates.split(',').map(s => parseFloat(s?.trim()));
+              } else if (plant.latitude && plant.longitude) {
+                lat = parseFloat(plant.latitude);
+                lng = parseFloat(plant.longitude);
+              }
+              if (!isNaN(lat) && !isNaN(lng)) {
+                bounds.extend([lng, lat]);
+                hasValidBounds = true;
+              }
+            });
+          } else if (t.location_coordinates) {
+            // Fallback to transaction location
             const [lat, lng] = t.location_coordinates.split(',').map(s => parseFloat(s?.trim()));
             if (!isNaN(lat) && !isNaN(lng)) {
               bounds.extend([lng, lat]);
@@ -1092,6 +1236,7 @@ const MapView = ({ userEmail }) => {
             }
           }
         });
+        
         if (hasValidBounds) {
           map.current.fitBounds(bounds, { padding: 50, maxZoom: 6 });
         }
