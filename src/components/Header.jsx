@@ -41,6 +41,7 @@ const Header = ({ activeView, setActiveView, user, onLogout }) => {
             >
               Pipeline
             </button>
+{/* Impact Calculator tab hidden for now
             <button
               onClick={() => setActiveView('impact')}
               className={`px-4 py-2 text-sm font-medium rounded-md transition-colors duration-200 ${
@@ -51,6 +52,7 @@ const Header = ({ activeView, setActiveView, user, onLogout }) => {
             >
               Impact Calculator
             </button>
+*/}
           </div>
         </div>
         

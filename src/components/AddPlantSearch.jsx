@@ -83,44 +83,10 @@ const AddPlantSearch = ({ onAddPlant, onToggleGlobal, showingGlobal, onFilteredP
 
   // Effect to notify parent when filters change (for map markers)
   useEffect(() => {
-    console.log('Filters changed:', { 
-      selectedCountries, 
-      capacityRange, 
-      selectedStatus,
-      totalPlants: globalPlants.length,
-      impactResultsCount: impactResults.length
-    });
-    
-    // Debug: Check what columns are available in impact results
-    if (impactResults.length > 0) {
-      console.log('Impact results columns:', Object.keys(impactResults[0]));
-      console.log('First impact result sample:', impactResults[0]);
-    }
-    
-    // Create a Set of plant names that have impact results (normalize to lowercase)
-    const impactPlantNames = new Set(
-      impactResults
-        .map(result => result['Unique plant name']?.toLowerCase()?.trim())
-        .filter(Boolean)
-    );
-    
-    console.log(`Filtering to ${impactPlantNames.size} unique plants with impact results`);
-    console.log('Sample impact plant names:', Array.from(impactPlantNames).slice(0, 5));
-    
     // Apply filters to all global plants
     const filtered = globalPlants.filter(plant => {
       // Must have coordinates
       if (!plant.Latitude || !plant.Longitude) return false;
-      
-      // Debug: Log first plant for comparison
-      if (globalPlants.indexOf(plant) === 0 && impactResults.length > 0) {
-        console.log('First global plant sample:', plant);
-        console.log('Plant name from global:', plant['Plant name']);
-      }
-      
-      // Only include plants that have impact results (match by plant name)
-      const plantName = plant['Plant name']?.toLowerCase()?.trim();
-      if (impactResults.length > 0 && (!plantName || !impactPlantNames.has(plantName))) return false;
       
       // Capacity filter
       const capacity = parseFloat(plant['Capacity (MW)']) || 0;
@@ -138,8 +104,6 @@ const AddPlantSearch = ({ onAddPlant, onToggleGlobal, showingGlobal, onFilteredP
       
       return true;
     });
-    
-    console.log('Filtered plants before dedup:', filtered.length);
     
     // Deduplicate by plant name and coordinates, sum capacities and collect unit details
     const uniquePlants = new Map();
@@ -201,7 +165,7 @@ const AddPlantSearch = ({ onAddPlant, onToggleGlobal, showingGlobal, onFilteredP
     if (onFilteredPlantsChange) {
       onFilteredPlantsChange(processedPlants);
     }
-  }, [globalPlants, capacityRange, selectedCountries, selectedStatus, onFilteredPlantsChange, impactResults]);
+  }, [globalPlants, capacityRange, selectedCountries, selectedStatus, onFilteredPlantsChange]);
 
   // Separate effect for search results display
   useEffect(() => {
