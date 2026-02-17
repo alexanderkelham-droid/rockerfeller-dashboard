@@ -48,6 +48,7 @@ const CRMView = ({ userEmail }) => {
   const [isCreating, setIsCreating] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCountry, setFilterCountry] = useState('');
+  const [filterStage, setFilterStage] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterPartner, setFilterPartner] = useState('');
   const [filterEngagement, setFilterEngagement] = useState('');
@@ -88,15 +89,16 @@ const CRMView = ({ userEmail }) => {
         t.notes?.toLowerCase().includes(searchTerm.toLowerCase());
       
       const matchesCountry = !filterCountry || t.country === filterCountry;
+      const matchesStage = !filterStage || t.transaction_stage === filterStage;
       const matchesStatus = !filterStatus || t.transaction_status === filterStatus;
       const matchesPartner = !filterPartner || 
         (t.funded_delivery_partners && t.funded_delivery_partners.includes(filterPartner));
       const matchesEngagement = !filterEngagement || t.engagement_status === filterEngagement;
       const matchesPriority = !filterPriority || t.priority === filterPriority;
       
-      return matchesSearch && matchesCountry && matchesStatus && matchesPartner && matchesEngagement && matchesPriority;
+      return matchesSearch && matchesCountry && matchesStage && matchesStatus && matchesPartner && matchesEngagement && matchesPriority;
     });
-  }, [transactions, searchTerm, filterCountry, filterStatus, filterPartner, filterEngagement, filterPriority]);
+  }, [transactions, searchTerm, filterCountry, filterStage, filterStatus, filterPartner, filterEngagement, filterPriority]);
 
   const transactionsByStage = useMemo(() => {
     const grouped = {};
@@ -472,6 +474,19 @@ const CRMView = ({ userEmail }) => {
                 </select>
               </div>
               <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-500 mb-1.5">Transaction Stage</label>
+                <select
+                  value={filterStage}
+                  onChange={(e) => setFilterStage(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 text-sm bg-white"
+                >
+                  <option value="">All Stages</option>
+                  {PROJECT_STAGES.map(s => (
+                    <option key={s.id} value={s.id}>{s.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex-1">
                 <label className="block text-xs font-medium text-gray-500 mb-1.5">RAG Status</label>
                 <select
                   value={filterStatus}
@@ -482,19 +497,6 @@ const CRMView = ({ userEmail }) => {
                   <option value="green">On Track</option>
                   <option value="amber">At Risk</option>
                   <option value="red">Blocked</option>
-                </select>
-              </div>
-              <div className="flex-1">
-                <label className="block text-xs font-medium text-gray-500 mb-1.5">Engagement</label>
-                <select
-                  value={filterEngagement}
-                  onChange={(e) => setFilterEngagement(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 text-sm bg-white"
-                >
-                  <option value="">All Engagements</option>
-                  {ENGAGEMENT_STATUSES.map(e => (
-                    <option key={e.id} value={e.id}>{e.label}</option>
-                  ))}
                 </select>
               </div>
               <div className="flex-1">
@@ -511,7 +513,7 @@ const CRMView = ({ userEmail }) => {
                 </select>
               </div>
               <button
-                onClick={() => { setFilterCountry(''); setFilterStatus(''); setFilterPartner(''); setFilterEngagement(''); setFilterPriority(''); }}
+                onClick={() => { setFilterCountry(''); setFilterStage(''); setFilterStatus(''); setFilterPartner(''); setFilterEngagement(''); setFilterPriority(''); }}
                 className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700"
               >
                 Clear

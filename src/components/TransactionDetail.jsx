@@ -817,13 +817,13 @@ const TransactionDetail = ({
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <div className="col-span-2">
-                  <label className="block text-xs text-gray-500 mb-1">Estimated Deal Size</label>
+                  <label className="block text-xs text-gray-500 mb-1">Total Project Value</label>
                   <input
                     type="number"
-                    name="estimated_deal_size"
-                    value={formData.estimated_deal_size || ''}
+                    name="project_value"
+                    value={formData.project_value || ''}
                     onChange={handleChange}
-                    placeholder="50000000"
+                    placeholder="100000000"
                     className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                   />
                 </div>
@@ -1164,6 +1164,30 @@ const TransactionDetail = ({
           {activeTab === 'transaction' && (
             <div className="space-y-4">
               <h3 className="font-semibold text-gray-900 border-b pb-2">Transaction Details</h3>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <label className="block text-xs text-gray-500 mb-1">Estimated Deal Size</label>
+                  <input
+                    type="number"
+                    name="estimated_deal_size"
+                    value={formData.estimated_deal_size || ''}
+                    onChange={handleChange}
+                    placeholder="50000000"
+                    className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Currency</label>
+                  <select
+                    name="deal_currency"
+                    value={formData.deal_currency || 'USD'}
+                    onChange={handleChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500"
+                  >
+                    {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
+                  </select>
+                </div>
+              </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Financial Mechanism</label>
                 <input type="text" name="financial_mechanism" value={formData.financial_mechanism || ''} onChange={handleChange} placeholder="e.g., Concessional loan, Grant" className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
@@ -1299,23 +1323,6 @@ const TransactionDetail = ({
                   placeholder="https://..."
                   className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500"
                 />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Assumptions Confidence</label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="range"
-                    name="assumptions_confidence_rating"
-                    min="0"
-                    max="100"
-                    value={formData.assumptions_confidence_rating || 0}
-                    onChange={handleChange}
-                    className="flex-1"
-                  />
-                  <span className="text-lg font-bold min-w-[50px] text-right">
-                    {formData.assumptions_confidence_rating || 0}%
-                  </span>
-                </div>
               </div>
             </div>
           )}
