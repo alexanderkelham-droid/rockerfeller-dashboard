@@ -546,7 +546,7 @@ const CRMView = ({ userEmail }) => {
                 {/* Cards */}
                 <div className="flex-1 overflow-y-auto p-3 space-y-2">
                   {transactionsByStage[stage.id]?.map(transaction => (
-                    <TransactionCard key={transaction.id} transaction={transaction} />
+                    <ProjectCard key={transaction.id} transaction={transaction} />
                   ))}
                   {transactionsByStage[stage.id]?.length === 0 && (
                     <div className="text-center py-12 text-gray-400 text-sm">
