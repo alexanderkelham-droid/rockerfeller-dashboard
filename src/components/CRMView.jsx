@@ -544,13 +544,13 @@ const CRMView = ({ userEmail }) => {
       ) : viewMode === 'pipeline' ? (
         /* Pipeline View - Engagement Status Columns */
         <div className="flex-1 overflow-x-auto p-4">
-          <div className="flex gap-3 min-w-max h-full">
+          <div className="flex gap-3 h-full">
             {ENGAGEMENT_STATUSES.map(engagement => (
               <div
                 key={engagement.id}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, engagement.id)}
-                className="w-80 flex-shrink-0 flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm"
+                className="flex-1 min-w-[280px] flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm"
               >
                 {/* Column Header */}
                 <div className={`px-4 py-3 border-b border-gray-100 ${engagement.bgColor} rounded-t-xl`}>
