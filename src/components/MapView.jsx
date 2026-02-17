@@ -1669,7 +1669,7 @@ const MapView = ({ userEmail }) => {
             <div className="px-8 pt-4 pb-6 border-b border-gray-100">
               <div className="flex items-start justify-between pr-8">
                 <div>
-                  <h3 className="text-2xl font-semibold text-gray-800 mb-1">{transaction?.project_name || transaction?.plant_name || 'Transaction'}</h3>
+                  <h3 className="text-2xl font-semibold text-gray-800 mb-1">{transaction?.project_name || transaction?.plant_name || 'Project'}</h3>
                   <p className="text-sm text-gray-500">{transaction?.country} {transaction?.capacity_mw ? `• ${transaction.capacity_mw} MW` : ''}</p>
                 </div>
                 <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border} border`}>
@@ -1687,7 +1687,7 @@ const MapView = ({ userEmail }) => {
                       : 'text-gray-500 hover:bg-gray-100'
                   }`}
                 >
-                  Transaction
+                  Overview
                 </button>
                 <button
                   onClick={() => setSelectedPopupTab('project')}
@@ -1697,7 +1697,7 @@ const MapView = ({ userEmail }) => {
                       : 'text-gray-500 hover:bg-gray-100'
                   }`}
                 >
-                  Project
+                  Deal Details
                 </button>
                 <button
                   onClick={() => setSelectedPopupTab('plants')}
@@ -1724,7 +1724,7 @@ const MapView = ({ userEmail }) => {
             
             {/* Scrollable Content */}
             <div className="overflow-y-auto px-8 py-6" style={{ maxHeight: 'calc(80vh - 180px)' }}>
-              {/* Transaction Tab */}
+              {/* Overview Tab */}
               {selectedPopupTab === 'transaction' && (
                 <>
                   <div className="grid grid-cols-2 gap-6">

@@ -2,19 +2,26 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import TransactionDetail from './TransactionDetail';
 
-// Transaction stage definitions with colors - more professional palette
-const TRANSACTION_STAGES = [
-  { id: 'origination', label: 'Origination', color: 'border-l-indigo-500', bgColor: 'bg-indigo-50', textColor: 'text-indigo-700' },
-  { id: 'scoping', label: 'Scoping', color: 'border-l-blue-500', bgColor: 'bg-blue-50', textColor: 'text-blue-700' },
-  { id: 'concept_note', label: 'Concept Note', color: 'border-l-cyan-500', bgColor: 'bg-cyan-50', textColor: 'text-cyan-700' },
-  { id: 'agreement_signed', label: 'Agreement Signed', color: 'border-l-amber-500', bgColor: 'bg-amber-50', textColor: 'text-amber-700' },
-  { id: 'in_delivery', label: 'In Delivery', color: 'border-l-orange-500', bgColor: 'bg-orange-50', textColor: 'text-orange-700' },
-  { id: 'transaction_complete', label: 'Complete', color: 'border-l-emerald-500', bgColor: 'bg-emerald-50', textColor: 'text-emerald-700' },
-  { id: 'on_hold', label: 'On Hold', color: 'border-l-gray-400', bgColor: 'bg-gray-50', textColor: 'text-gray-600' },
-  { id: 'cancelled', label: 'Cancelled', color: 'border-l-red-500', bgColor: 'bg-red-50', textColor: 'text-red-700' },
+// Project stage definitions - CATA PMO pipeline stages
+const PROJECT_STAGES = [
+  { id: 'ideation', label: 'Ideation', color: 'border-l-slate-400', bgColor: 'bg-slate-50', textColor: 'text-slate-700', description: 'Initial project concept identification' },
+  { id: 'screening', label: 'Screening', color: 'border-l-indigo-500', bgColor: 'bg-indigo-50', textColor: 'text-indigo-700', description: 'Preliminary assessment and viability check' },
+  { id: 'pre_feasibility', label: 'Pre-Feasibility', color: 'border-l-blue-500', bgColor: 'bg-blue-50', textColor: 'text-blue-700', description: 'Initial technical and financial analysis' },
+  { id: 'full_feasibility', label: 'Full Feasibility', color: 'border-l-cyan-500', bgColor: 'bg-cyan-50', textColor: 'text-cyan-700', description: 'Comprehensive feasibility study' },
+  { id: 'deal_structuring', label: 'Deal Structuring', color: 'border-l-amber-500', bgColor: 'bg-amber-50', textColor: 'text-amber-700', description: 'Financial and legal structuring' },
+  { id: 'closing', label: 'Closing', color: 'border-l-orange-500', bgColor: 'bg-orange-50', textColor: 'text-orange-700', description: 'Final negotiations and agreement signing' },
+  { id: 'transaction_complete', label: 'Transaction Complete', color: 'border-l-emerald-500', bgColor: 'bg-emerald-50', textColor: 'text-emerald-700', description: 'Successfully closed transaction' },
 ];
 
-// RAG status colors
+// Engagement status (formerly transaction status dropdown)
+const ENGAGEMENT_STATUSES = [
+  { id: 'concept_proposal', label: 'Concept/Proposal Development', color: 'bg-blue-500' },
+  { id: 'in_delivery', label: 'In Delivery', color: 'bg-amber-500' },
+  { id: 'completed', label: 'Completed', color: 'bg-emerald-500' },
+  { id: 'no_engagement', label: 'No Engagement', color: 'bg-gray-400' },
+];
+
+// RAG status colors (project health indicator)
 const RAG_COLORS = {
   green: 'bg-emerald-500',
   amber: 'bg-amber-500',
@@ -22,8 +29,16 @@ const RAG_COLORS = {
   closed: 'bg-gray-500',
 };
 
-// Delivery partners
-const DELIVERY_PARTNERS = ['CSV', 'RMI', 'CT', 'CCSF', 'World Bank', 'ADB', 'IADB'];
+// Delivery partners - CATA ecosystem
+const DELIVERY_PARTNERS = ['CSV', 'RMI', 'CT', 'CCSF', 'World Bank', 'ADB', 'IADB', 'IFC', 'EBRD', 'CIF', 'GCF', 'AFC'];
+
+// Priority levels for projects
+const PRIORITY_LEVELS = [
+  { id: 'critical', label: 'Critical', color: 'bg-red-500' },
+  { id: 'high', label: 'High', color: 'bg-orange-500' },
+  { id: 'medium', label: 'Medium', color: 'bg-amber-500' },
+  { id: 'low', label: 'Low', color: 'bg-green-500' },
+];
 
 const CRMView = ({ userEmail }) => {
   const [transactions, setTransactions] = useState([]);
@@ -35,6 +50,8 @@ const CRMView = ({ userEmail }) => {
   const [filterCountry, setFilterCountry] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterPartner, setFilterPartner] = useState('');
+  const [filterEngagement, setFilterEngagement] = useState('');
+  const [filterPriority, setFilterPriority] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [draggedTransaction, setDraggedTransaction] = useState(null);
 
@@ -61,26 +78,29 @@ const CRMView = ({ userEmail }) => {
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
-      // Exclude closed transactions from pipeline
-      if (t.transaction_stage === 'closed') return false;
+      // Exclude closed/completed projects from active pipeline view
+      if (t.transaction_stage === 'closed' || t.transaction_stage === 'transaction_complete') return false;
       
       const matchesSearch = !searchTerm || 
         t.plant_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         t.project_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        t.owner?.toLowerCase().includes(searchTerm.toLowerCase());
+        t.owner?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        t.notes?.toLowerCase().includes(searchTerm.toLowerCase());
       
       const matchesCountry = !filterCountry || t.country === filterCountry;
       const matchesStatus = !filterStatus || t.transaction_status === filterStatus;
       const matchesPartner = !filterPartner || 
         (t.funded_delivery_partners && t.funded_delivery_partners.includes(filterPartner));
+      const matchesEngagement = !filterEngagement || t.engagement_status === filterEngagement;
+      const matchesPriority = !filterPriority || t.priority === filterPriority;
       
-      return matchesSearch && matchesCountry && matchesStatus && matchesPartner;
+      return matchesSearch && matchesCountry && matchesStatus && matchesPartner && matchesEngagement && matchesPriority;
     });
-  }, [transactions, searchTerm, filterCountry, filterStatus, filterPartner]);
+  }, [transactions, searchTerm, filterCountry, filterStatus, filterPartner, filterEngagement, filterPriority]);
 
   const transactionsByStage = useMemo(() => {
     const grouped = {};
-    TRANSACTION_STAGES.forEach(stage => {
+    PROJECT_STAGES.forEach(stage => {
       grouped[stage.id] = filteredTransactions.filter(t => t.transaction_stage === stage.id);
     });
     return grouped;
@@ -178,19 +198,24 @@ const CRMView = ({ userEmail }) => {
   const summaryStats = useMemo(() => {
     const total = filteredTransactions.length;
     const totalValue = filteredTransactions.reduce((sum, t) => sum + (t.estimated_deal_size || 0), 0);
+    const totalCapacity = filteredTransactions.reduce((sum, t) => sum + (parseFloat(t.capacity_mw) || 0), 0);
     const avgConfidence = filteredTransactions.length > 0
       ? filteredTransactions.reduce((sum, t) => sum + (t.transaction_confidence_rating || 0), 0) / filteredTransactions.length
       : 0;
     const greenCount = filteredTransactions.filter(t => t.transaction_status === 'green').length;
     const amberCount = filteredTransactions.filter(t => t.transaction_status === 'amber').length;
     const redCount = filteredTransactions.filter(t => t.transaction_status === 'red').length;
+    const inDelivery = filteredTransactions.filter(t => t.engagement_status === 'in_delivery').length;
+    const uniqueCountries = new Set(filteredTransactions.map(t => t.country).filter(Boolean)).size;
     
-    return { total, totalValue, avgConfidence, greenCount, amberCount, redCount };
+    return { total, totalValue, totalCapacity, avgConfidence, greenCount, amberCount, redCount, inDelivery, uniqueCountries };
   }, [filteredTransactions]);
 
-  // Professional transaction card
-  const TransactionCard = ({ transaction }) => {
-    const stage = TRANSACTION_STAGES.find(s => s.id === transaction.transaction_stage);
+  // Project card component with enhanced CATA features
+  const ProjectCard = ({ transaction }) => {
+    const stage = PROJECT_STAGES.find(s => s.id === transaction.transaction_stage);
+    const engagement = ENGAGEMENT_STATUSES.find(e => e.id === transaction.engagement_status);
+    const hasNotes = transaction.notes && transaction.notes.trim().length > 0;
     
     return (
       <div
@@ -208,9 +233,16 @@ const CRMView = ({ userEmail }) => {
               <p className="text-sm text-gray-500 truncate mt-0.5">{transaction.plant_name}</p>
             )}
           </div>
-          {transaction.transaction_status && (
-            <div className={`w-2.5 h-2.5 rounded-full ${RAG_COLORS[transaction.transaction_status]} flex-shrink-0 ml-2 mt-1`} />
-          )}
+          <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+            {hasNotes && (
+              <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 13V5a2 2 0 00-2-2H4a2 2 0 00-2 2v8a2 2 0 002 2h3l3 3 3-3h3a2 2 0 002-2zM5 7a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1zm1 3a1 1 0 100 2h3a1 1 0 100-2H6z" clipRule="evenodd" />
+              </svg>
+            )}
+            {transaction.transaction_status && (
+              <div className={`w-2.5 h-2.5 rounded-full ${RAG_COLORS[transaction.transaction_status]}`} title={transaction.transaction_status === 'green' ? 'On Track' : transaction.transaction_status === 'amber' ? 'At Risk' : 'Blocked'} />
+            )}
+          </div>
         </div>
 
         <div className="space-y-2 text-sm text-gray-600">
@@ -220,6 +252,16 @@ const CRMView = ({ userEmail }) => {
               <span>{transaction.country}</span>
             </div>
           )}
+          
+          {/* Engagement Status Badge */}
+          {engagement && (
+            <div className="flex items-center gap-2">
+              <span className={`px-2 py-0.5 text-xs rounded-full text-white ${engagement.color}`}>
+                {engagement.label}
+              </span>
+            </div>
+          )}
+          
           <div className="flex items-center justify-between">
             {transaction.capacity_mw && (
               <span className="text-gray-500">{transaction.capacity_mw} MW</span>
@@ -230,7 +272,7 @@ const CRMView = ({ userEmail }) => {
           </div>
         </div>
 
-        {(transaction.transaction_confidence_rating !== null || transaction.deal_timeframe) && (
+        {(transaction.transaction_confidence_rating !== null || transaction.expected_signing_date) && (
           <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
             {transaction.transaction_confidence_rating !== null && (
               <div className="flex items-center gap-2">
@@ -246,11 +288,18 @@ const CRMView = ({ userEmail }) => {
                 <span className="text-xs text-gray-500">{transaction.transaction_confidence_rating}%</span>
               </div>
             )}
-            {transaction.deal_timeframe && (
+            {transaction.expected_signing_date && (
               <span className="text-xs text-gray-400">
-                {new Date(transaction.deal_timeframe).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}
+                {new Date(transaction.expected_signing_date).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}
               </span>
             )}
+          </div>
+        )}
+        
+        {/* Quick notes preview */}
+        {hasNotes && (
+          <div className="mt-3 pt-3 border-t border-gray-100">
+            <p className="text-xs text-gray-500 line-clamp-2 italic">{transaction.notes}</p>
           </div>
         )}
       </div>
@@ -276,8 +325,8 @@ const CRMView = ({ userEmail }) => {
         <div className="px-6 py-5">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-semibold text-gray-900">Pipeline</h1>
-              <p className="text-sm text-gray-500 mt-0.5">Track coal transition projects from origination to completion</p>
+              <h1 className="text-xl font-semibold text-gray-900">Project Pipeline</h1>
+              <p className="text-sm text-gray-500 mt-0.5">CATA PMO - Track coal retirement projects from ideation to transaction complete</p>
             </div>
             <button
               onClick={handleCreateTransaction}
@@ -286,17 +335,22 @@ const CRMView = ({ userEmail }) => {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
-              New Transaction
+              New Project
             </button>
           </div>
         </div>
 
-        {/* Stats Bar - Cleaner design */}
+        {/* Stats Bar - Enhanced CATA metrics */}
         <div className="px-6 pb-4">
-          <div className="flex items-center gap-6 text-sm">
+          <div className="flex items-center gap-6 text-sm flex-wrap">
             <div className="flex items-center gap-2">
-              <span className="text-gray-500">Total:</span>
+              <span className="text-gray-500">Projects:</span>
               <span className="font-semibold text-gray-900">{summaryStats.total}</span>
+            </div>
+            <div className="w-px h-4 bg-gray-200" />
+            <div className="flex items-center gap-2">
+              <span className="text-gray-500">Capacity:</span>
+              <span className="font-semibold text-gray-900">{summaryStats.totalCapacity.toLocaleString()} MW</span>
             </div>
             <div className="w-px h-4 bg-gray-200" />
             <div className="flex items-center gap-2">
@@ -305,20 +359,25 @@ const CRMView = ({ userEmail }) => {
             </div>
             <div className="w-px h-4 bg-gray-200" />
             <div className="flex items-center gap-2">
-              <span className="text-gray-500">Avg Confidence:</span>
-              <span className="font-semibold text-gray-900">{summaryStats.avgConfidence.toFixed(0)}%</span>
+              <span className="text-gray-500">Countries:</span>
+              <span className="font-semibold text-gray-900">{summaryStats.uniqueCountries}</span>
+            </div>
+            <div className="w-px h-4 bg-gray-200" />
+            <div className="flex items-center gap-2">
+              <span className="text-gray-500">In Delivery:</span>
+              <span className="font-semibold text-emerald-600">{summaryStats.inDelivery}</span>
             </div>
             <div className="w-px h-4 bg-gray-200" />
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5" title="On Track">
                 <div className="w-2 h-2 rounded-full bg-emerald-500" />
                 <span className="text-gray-600">{summaryStats.greenCount}</span>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5" title="At Risk">
                 <div className="w-2 h-2 rounded-full bg-amber-500" />
                 <span className="text-gray-600">{summaryStats.amberCount}</span>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5" title="Blocked">
                 <div className="w-2 h-2 rounded-full bg-red-500" />
                 <span className="text-gray-600">{summaryStats.redCount}</span>
               </div>
@@ -334,7 +393,7 @@ const CRMView = ({ userEmail }) => {
             </svg>
             <input
               type="text"
-              placeholder="Search transactions..."
+              placeholder="Search projects, plants, notes..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm"
@@ -344,7 +403,7 @@ const CRMView = ({ userEmail }) => {
           <button
             onClick={() => setShowFilters(!showFilters)}
             className={`flex items-center gap-2 px-3 py-2 border rounded-lg transition-colors text-sm ${
-              showFilters || filterCountry || filterStatus || filterPartner
+              showFilters || filterCountry || filterStatus || filterPartner || filterEngagement || filterPriority
                 ? 'border-primary-500 bg-primary-50 text-primary-700'
                 : 'border-gray-200 hover:bg-gray-50 text-gray-600'
             }`}
@@ -353,9 +412,9 @@ const CRMView = ({ userEmail }) => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
             </svg>
             Filters
-            {(filterCountry || filterStatus || filterPartner) && (
+            {(filterCountry || filterStatus || filterPartner || filterEngagement || filterPriority) && (
               <span className="bg-primary-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                {[filterCountry, filterStatus, filterPartner].filter(Boolean).length}
+                {[filterCountry, filterStatus, filterPartner, filterEngagement, filterPriority].filter(Boolean).length}
               </span>
             )}
           </button>
@@ -404,7 +463,7 @@ const CRMView = ({ userEmail }) => {
                 </select>
               </div>
               <div className="flex-1">
-                <label className="block text-xs font-medium text-gray-500 mb-1.5">Status</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1.5">RAG Status</label>
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value)}
@@ -414,6 +473,19 @@ const CRMView = ({ userEmail }) => {
                   <option value="green">On Track</option>
                   <option value="amber">At Risk</option>
                   <option value="red">Blocked</option>
+                </select>
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-500 mb-1.5">Engagement</label>
+                <select
+                  value={filterEngagement}
+                  onChange={(e) => setFilterEngagement(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 text-sm bg-white"
+                >
+                  <option value="">All Engagements</option>
+                  {ENGAGEMENT_STATUSES.map(e => (
+                    <option key={e.id} value={e.id}>{e.label}</option>
+                  ))}
                 </select>
               </div>
               <div className="flex-1">
@@ -430,7 +502,7 @@ const CRMView = ({ userEmail }) => {
                 </select>
               </div>
               <button
-                onClick={() => { setFilterCountry(''); setFilterStatus(''); setFilterPartner(''); }}
+                onClick={() => { setFilterCountry(''); setFilterStatus(''); setFilterPartner(''); setFilterEngagement(''); setFilterPriority(''); }}
                 className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700"
               >
                 Clear
@@ -446,10 +518,10 @@ const CRMView = ({ userEmail }) => {
           <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary-600 border-t-transparent"></div>
         </div>
       ) : viewMode === 'pipeline' ? (
-        /* Pipeline View - Cleaner columns */
+        /* Pipeline View - CATA Project Stages */
         <div className="flex-1 overflow-x-auto p-4">
           <div className="flex gap-3 min-w-max h-full">
-            {TRANSACTION_STAGES.slice(0, 6).map(stage => (
+            {PROJECT_STAGES.map(stage => (
               <div
                 key={stage.id}
                 onDragOver={handleDragOver}
@@ -459,7 +531,12 @@ const CRMView = ({ userEmail }) => {
                 {/* Column Header */}
                 <div className={`px-4 py-3 border-b border-gray-100 ${stage.bgColor} rounded-t-xl`}>
                   <div className="flex items-center justify-between">
-                    <h3 className={`font-medium text-sm ${stage.textColor}`}>{stage.label}</h3>
+                    <div>
+                      <h3 className={`font-medium text-sm ${stage.textColor}`}>{stage.label}</h3>
+                      {stage.description && (
+                        <p className="text-xs text-gray-500 mt-0.5">{stage.description}</p>
+                      )}
+                    </div>
                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full bg-white/60 ${stage.textColor}`}>
                       {transactionsByStage[stage.id]?.length || 0}
                     </span>
@@ -473,7 +550,7 @@ const CRMView = ({ userEmail }) => {
                   ))}
                   {transactionsByStage[stage.id]?.length === 0 && (
                     <div className="text-center py-12 text-gray-400 text-sm">
-                      No transactions
+                      No projects
                     </div>
                   )}
                 </div>
@@ -482,7 +559,7 @@ const CRMView = ({ userEmail }) => {
           </div>
         </div>
       ) : (
-        /* List View - Cleaner table */
+        /* List View - Enhanced table */
         <div className="flex-1 overflow-auto p-4">
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             <table className="w-full">
@@ -491,16 +568,18 @@ const CRMView = ({ userEmail }) => {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Project</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Country</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stage</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Engagement</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">RAG</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Capacity</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Deal Size</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Confidence</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Close Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Target Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {filteredTransactions.map(transaction => {
-                  const stage = TRANSACTION_STAGES.find(s => s.id === transaction.transaction_stage);
+                  const stage = PROJECT_STAGES.find(s => s.id === transaction.transaction_stage);
+                  const engagement = ENGAGEMENT_STATUSES.find(e => e.id === transaction.engagement_status);
                   return (
                     <tr 
                       key={transaction.id} 
@@ -524,8 +603,15 @@ const CRMView = ({ userEmail }) => {
                         )}
                       </td>
                       <td className="px-4 py-3">
+                        {engagement && (
+                          <span className={`inline-flex px-2 py-1 text-xs font-medium rounded text-white ${engagement.color}`}>
+                            {engagement.label}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
                         {transaction.transaction_status && (
-                          <div className={`w-2.5 h-2.5 rounded-full ${RAG_COLORS[transaction.transaction_status]}`} />
+                          <div className={`w-2.5 h-2.5 rounded-full ${RAG_COLORS[transaction.transaction_status]}`} title={transaction.transaction_status === 'green' ? 'On Track' : transaction.transaction_status === 'amber' ? 'At Risk' : 'Blocked'} />
                         )}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-600">
@@ -536,36 +622,27 @@ const CRMView = ({ userEmail }) => {
                           ? `$${(transaction.estimated_deal_size / 1000000).toFixed(1)}M` 
                           : '—'}
                       </td>
-                      <td className="px-4 py-3">
-                        {transaction.transaction_confidence_rating !== null && (
-                          <div className="flex items-center gap-2">
-                            <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                              <div 
-                                className={`h-full rounded-full ${
-                                  transaction.transaction_confidence_rating >= 70 ? 'bg-emerald-500' :
-                                  transaction.transaction_confidence_rating >= 40 ? 'bg-amber-500' : 'bg-red-400'
-                                }`}
-                                style={{ width: `${transaction.transaction_confidence_rating}%` }}
-                              />
-                            </div>
-                            <span className="text-xs text-gray-500">{transaction.transaction_confidence_rating}%</span>
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-500">
-                        {transaction.deal_timeframe 
-                          ? new Date(transaction.deal_timeframe).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {transaction.expected_signing_date 
+                          ? new Date(transaction.expected_signing_date).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
                           : '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        {transaction.notes && (
+                          <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M18 13V5a2 2 0 00-2-2H4a2 2 0 00-2 2v8a2 2 0 002 2h3l3 3 3-3h3a2 2 0 002-2zM5 7a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1zm1 3a1 1 0 100 2h3a1 1 0 100-2H6z" clipRule="evenodd" />
+                          </svg>
+                        )}
                       </td>
                     </tr>
                   );
                 })}
                 {filteredTransactions.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-4 py-16 text-center text-gray-500">
+                    <td colSpan={9} className="px-4 py-16 text-center text-gray-500">
                       {transactions.length === 0 
-                        ? 'No transactions yet. Click "New Transaction" to get started.'
-                        : 'No transactions match your filters.'}
+                        ? 'No projects yet. Click "New Project" to get started.'
+                        : 'No projects match your filters.'}
                     </td>
                   </tr>
                 )}

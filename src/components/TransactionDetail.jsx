@@ -1,14 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
-// Transaction stage definitions
-const TRANSACTION_STAGES = [
-  { id: 'origination', label: 'Origination' },
-  { id: 'scoping', label: 'Scoping' },
-  { id: 'concept_note', label: 'Concept Note' },
-  { id: 'agreement_signed', label: 'Agreement Signed' },
-  { id: 'in_delivery', label: 'In Delivery' },
-  { id: 'transaction_complete', label: 'Complete' },
+// Project stage definitions (CATA PMO stages)
+const PROJECT_STAGES = [
+  { id: 'ideation', label: 'Ideation', description: 'Initial concept development' },
+  { id: 'screening', label: 'Screening', description: 'Preliminary assessment' },
+  { id: 'pre_feasibility', label: 'Pre-Feasibility', description: 'Initial feasibility analysis' },
+  { id: 'full_feasibility', label: 'Full Feasibility', description: 'Detailed feasibility study' },
+  { id: 'deal_structuring', label: 'Deal Structuring', description: 'Transaction design & negotiation' },
+  { id: 'closing', label: 'Closing', description: 'Final approvals & signing' },
+  { id: 'transaction_complete', label: 'Transaction Complete', description: 'Successfully closed' },
+];
+
+// Engagement status options
+const ENGAGEMENT_STATUSES = [
+  { id: 'no_engagement', label: 'No Engagement', color: 'bg-gray-400' },
+  { id: 'concept_proposal', label: 'Concept/Proposal Development', color: 'bg-blue-500' },
+  { id: 'in_delivery', label: 'In Delivery', color: 'bg-emerald-500' },
+  { id: 'completed', label: 'Completed', color: 'bg-purple-500' },
 ];
 
 // RAG status colors
@@ -49,7 +58,7 @@ const COUNTRIES = [
   'United Kingdom', 'United States', 'Uzbekistan', 'Venezuela', 'Vietnam', 'Zambia', 'Zimbabwe'
 ];
 
-const DELIVERY_PARTNERS = ['CSV', 'RMI', 'CT', 'CCSF', 'World Bank', 'ADB', 'IADB'];
+const DELIVERY_PARTNERS = ['CSV', 'RMI', 'CT', 'CCSF', 'World Bank', 'ADB', 'AIIB', 'IADB', 'AfDB', 'EBRD', 'EIB', 'IFC', 'JICA', 'KfW', 'OPIC', 'Other'];
 
 const TransactionDetail = ({ 
   transaction, 
@@ -79,8 +88,9 @@ const TransactionDetail = ({
     initial_retirement_year: '',  // renamed from planned_retirement_year
     target_retirement_year: '',   // renamed from actual_retirement_year
     transition_type: '',
-    transaction_stage: 'origination',
+    transaction_stage: 'ideation',
     transaction_status: '',
+    engagement_status: 'no_engagement',  // new CATA field
     transaction_confidence_rating: '',
     transaction_next_steps: '',
     expected_signing_date: '',    // renamed from deal_timeframe
@@ -126,6 +136,7 @@ const TransactionDetail = ({
         deal_currency: transaction.deal_currency || 'USD',
         initial_retirement_year: transaction.initial_retirement_year || transaction.planned_retirement_year || '',
         target_retirement_year: transaction.target_retirement_year || transaction.actual_retirement_year || '',
+        engagement_status: transaction.engagement_status || 'no_engagement',
       });
       setPlantSearchQuery(transaction.plant_name || '');
       try {
@@ -306,7 +317,7 @@ const TransactionDetail = ({
       await addActivity({
         type: 'stage_change',
         title: 'Stage Changed',
-        description: `Stage changed from "${TRANSACTION_STAGES.find(s => s.id === oldStage)?.label || oldStage}" to "${TRANSACTION_STAGES.find(s => s.id === stageId)?.label}"`,
+        description: `Stage changed from "${PROJECT_STAGES.find(s => s.id === oldStage)?.label || oldStage}" to "${PROJECT_STAGES.find(s => s.id === stageId)?.label}"`,
       });
     }
   };
@@ -415,7 +426,7 @@ const TransactionDetail = ({
     }
   };
 
-  const currentStageIndex = TRANSACTION_STAGES.findIndex(s => s.id === formData.transaction_stage);
+  const currentStageIndex = PROJECT_STAGES.findIndex(s => s.id === formData.transaction_stage);
   const daysActive = transaction?.created_at 
     ? Math.floor((new Date() - new Date(transaction.created_at)) / (1000 * 60 * 60 * 24))
     : 0;
@@ -579,22 +590,23 @@ const TransactionDetail = ({
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <span className="text-xs font-medium text-primary-700 bg-primary-100 px-2 py-1 rounded">
-                Transaction Pipeline
+                Project Pipeline
               </span>
               <span className="text-xs text-gray-500">Active for {daysActive} days</span>
             </div>
           </div>
           
           <div className="flex items-center">
-            {TRANSACTION_STAGES.map((stage, index) => {
+            {PROJECT_STAGES.map((stage, index) => {
               const isActive = index === currentStageIndex;
               const isCompleted = index < currentStageIndex;
-              const isLast = index === TRANSACTION_STAGES.length - 1;
+              const isLast = index === PROJECT_STAGES.length - 1;
               
               return (
                 <div key={stage.id} className="flex items-center flex-1">
                   <button
                     onClick={() => handleStageClick(stage.id)}
+                    title={stage.description}
                     className={`flex-1 relative py-3 px-4 text-sm font-medium transition-colors ${
                       isActive 
                         ? 'bg-primary-600 text-white' 
@@ -776,7 +788,7 @@ const TransactionDetail = ({
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Transaction Status</label>
+                <label className="block text-xs text-gray-500 mb-1">RAG Status</label>
                 <select
                   name="transaction_status"
                   value={formData.transaction_status || ''}
@@ -788,6 +800,20 @@ const TransactionDetail = ({
                   <option value="amber">🟠 Amber - At Risk</option>
                   <option value="red">🔴 Red - Blocked</option>
                   <option value="closed">⚫ Grey - Closed</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Engagement Status</label>
+                <select
+                  name="engagement_status"
+                  value={formData.engagement_status || ''}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                >
+                  <option value="">Select engagement...</option>
+                  {ENGAGEMENT_STATUSES.map(status => (
+                    <option key={status.id} value={status.id}>{status.label}</option>
+                  ))}
                 </select>
               </div>
               <div className="grid grid-cols-3 gap-2">

@@ -39,7 +39,7 @@ const Header = ({ activeView, setActiveView, user, onLogout }) => {
                   : 'text-secondary-700 hover:text-secondary-900 hover:bg-secondary-200'
               }`}
             >
-              Pipeline
+              Project Pipeline
             </button>
 {/* Impact Calculator tab hidden for now
             <button
