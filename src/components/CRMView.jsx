@@ -228,25 +228,43 @@ const CRMView = ({ userEmail }) => {
     const engagement = ENGAGEMENT_STATUSES.find(e => e.id === transaction.engagement_status);
     const hasNotes = transaction.notes && transaction.notes.trim().length > 0;
     
+    // Funder logo mapping
+    const getFunderLogo = (funder) => {
+      switch(funder) {
+        case 'CATA': return '/cata-logo.png';
+        case 'Rockefeller': return '/rockerfeller foundation.png';
+        default: return null;
+      }
+    };
+    
     return (
       <div
         draggable
         onDragStart={(e) => handleDragStart(e, transaction)}
         onClick={() => setSelectedTransaction(transaction)}
-        className={`bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:shadow-lg transition-all duration-200 border-l-4 ${engagement?.borderColor || 'border-l-gray-300'}`}
+        className={`bg-white rounded-lg border border-gray-200 p-3 cursor-pointer hover:shadow-lg transition-all duration-200 border-l-4 ${engagement?.borderColor || 'border-l-gray-300'}`}
       >
-        <div className="flex items-start justify-between mb-3">
+        {/* Header with title, funder logo, and RAG status */}
+        <div className="flex items-start justify-between gap-2 mb-2">
           <div className="flex-1 min-w-0">
-            <h4 className="font-medium text-gray-900 truncate">
+            <h4 className="font-medium text-gray-900 text-sm leading-tight truncate">
               {transaction.project_name || transaction.plant_name || 'Unnamed Project'}
             </h4>
-            {transaction.project_name && transaction.plant_name && (
-              <p className="text-sm text-gray-500 truncate mt-0.5">{transaction.plant_name}</p>
+            {transaction.project_name && transaction.plant_name && transaction.project_name !== transaction.plant_name && (
+              <p className="text-xs text-gray-500 truncate">{transaction.plant_name}</p>
             )}
           </div>
-          <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {transaction.primary_funder && getFunderLogo(transaction.primary_funder) && (
+              <img 
+                src={getFunderLogo(transaction.primary_funder)} 
+                alt={transaction.primary_funder}
+                className="h-5 w-auto object-contain"
+                title={transaction.primary_funder}
+              />
+            )}
             {hasNotes && (
-              <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="w-3.5 h-3.5 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 13V5a2 2 0 00-2-2H4a2 2 0 00-2 2v8a2 2 0 002 2h3l3 3 3-3h3a2 2 0 002-2zM5 7a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1zm1 3a1 1 0 100 2h3a1 1 0 100-2H6z" clipRule="evenodd" />
               </svg>
             )}
@@ -256,51 +274,46 @@ const CRMView = ({ userEmail }) => {
           </div>
         </div>
 
-        <div className="space-y-2 text-sm text-gray-600">
+        {/* Country and Stage row */}
+        <div className="flex items-center justify-between gap-2 mb-2">
           {transaction.country && (
-            <div className="flex items-center gap-2">
-              <span className="text-gray-400">📍</span>
-              <span>{transaction.country}</span>
-            </div>
+            <span className="text-xs text-gray-500 truncate flex items-center gap-1">
+              <span>📍</span>{transaction.country}
+            </span>
           )}
-          
-          {/* Project Stage Badge (e.g., Pre-Feasibility, Full Feasibility) */}
           {stage && (
-            <div className="flex items-center gap-2">
-              <span className={`px-2 py-0.5 text-xs rounded-full ${stage.bgColor} ${stage.textColor} font-medium`}>
-                {stage.label}
-              </span>
-            </div>
+            <span className={`px-1.5 py-0.5 text-xs rounded ${stage.bgColor} ${stage.textColor} font-medium whitespace-nowrap`}>
+              {stage.label}
+            </span>
           )}
-          
-          <div className="flex items-center justify-between">
-            {transaction.capacity_mw && (
-              <span className="text-gray-500">{transaction.capacity_mw} MW</span>
-            )}
-            {transaction.estimated_deal_size && (
-              <span className="font-medium text-gray-700">${(transaction.estimated_deal_size / 1000000).toFixed(1)}M</span>
-            )}
-          </div>
         </div>
 
+        {/* Capacity and Deal Size row */}
+        <div className="flex items-center justify-between text-xs mb-2">
+          {transaction.capacity_mw && (
+            <span className="text-gray-600 font-medium">{transaction.capacity_mw} MW</span>
+          )}
+          {transaction.estimated_deal_size && (
+            <span className="font-semibold text-gray-800">${(transaction.estimated_deal_size / 1000000).toFixed(1)}M</span>
+          )}
+        </div>
+
+        {/* Confidence bar and date */}
         {(transaction.transaction_confidence_rating !== null || transaction.deal_timeframe) && (
-          <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
-            {transaction.transaction_confidence_rating !== null && (
-              <div className="flex items-center gap-2">
-                <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100">
+            {transaction.transaction_confidence_rating !== null && transaction.transaction_confidence_rating !== '' && (
+              <div className="flex items-center gap-1.5 flex-1">
+                <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                   <div 
-                    className={`h-full rounded-full transition-all ${
-                      transaction.transaction_confidence_rating >= 70 ? 'bg-emerald-500' :
-                      transaction.transaction_confidence_rating >= 40 ? 'bg-amber-500' : 'bg-red-400'
-                    }`}
+                    className={`h-full rounded-full ${transaction.transaction_confidence_rating >= 70 ? 'bg-emerald-500' : transaction.transaction_confidence_rating >= 40 ? 'bg-amber-500' : 'bg-red-400'}`}
                     style={{ width: `${transaction.transaction_confidence_rating}%` }}
                   />
                 </div>
-                <span className="text-xs text-gray-500">{transaction.transaction_confidence_rating}%</span>
+                <span className="text-xs text-gray-500 w-8">{transaction.transaction_confidence_rating}%</span>
               </div>
             )}
             {transaction.deal_timeframe && (
-              <span className="text-xs text-gray-400">
+              <span className="text-xs text-gray-400 whitespace-nowrap">
                 {new Date(transaction.deal_timeframe).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}
               </span>
             )}
@@ -309,7 +322,7 @@ const CRMView = ({ userEmail }) => {
         
         {/* Quick notes preview */}
         {hasNotes && (
-          <div className="mt-3 pt-3 border-t border-gray-100">
+          <div className="mt-2 pt-2 border-t border-gray-100">
             <p className="text-xs text-gray-500 line-clamp-2 italic">{transaction.notes}</p>
           </div>
         )}

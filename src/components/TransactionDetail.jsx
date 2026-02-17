@@ -106,6 +106,12 @@ const TransactionDetail = ({
     notes: '',
     assigned_to: '',
     plants: [],
+    primary_funder: '',  // CATA, Rockefeller, or Other
+    combustion_technology: '',
+    coal_type: '',
+    annual_co2_mt: '',
+    remaining_lifetime_years: '',
+    subregion: '',
   });
 
   const [activeTab, setActiveTab] = useState('summary');
@@ -206,6 +212,11 @@ const TransactionDetail = ({
 
   // Handle plant selection from search - adds to plants array
   const handleSelectPlant = (plant) => {
+    // Auto-calculate expected retirement year: use planned_retirement if available, otherwise start_year + 40
+    const startYear = parseInt(plant.start_year) || null;
+    const plannedRetirement = plant.planned_retirement ? parseInt(plant.planned_retirement) : null;
+    const calculatedRetirement = plannedRetirement || (startYear ? startYear + 40 : null);
+    
     const newPlant = {
       id: Date.now(), // temporary id for UI
       plant_name: plant.plant_name || '',
@@ -217,6 +228,12 @@ const TransactionDetail = ({
       start_year: plant.start_year || '',
       operational_status: plant.status || 'operating',
       gem_id: plant.gem_unit_phase_id || '',
+      combustion_technology: plant.combustion_technology || '',
+      coal_type: plant.coal_type || '',
+      annual_co2_mt: plant.annual_co2_million_tonnes_annum || '',
+      remaining_lifetime_years: plant.remaining_plant_lifetime_years || '',
+      subregion: plant.subregion || '',
+      planned_retirement: calculatedRetirement || '',
     };
     
     // Add to plants array and calculate aggregated values
@@ -224,6 +241,13 @@ const TransactionDetail = ({
       const updatedPlants = [...(prev.plants || []), newPlant];
       const totalCapacity = calculateTotalCapacity(updatedPlants);
       const uniqueCountries = [...new Set(updatedPlants.map(p => p.country).filter(Boolean))];
+      
+      // Calculate total annual CO2 from all plants
+      const totalAnnualCO2 = updatedPlants.reduce((sum, p) => sum + (parseFloat(p.annual_co2_mt) || 0), 0);
+      
+      // Use earliest retirement year from plants for project
+      const retirementYears = updatedPlants.map(p => p.planned_retirement).filter(Boolean);
+      const earliestRetirement = retirementYears.length > 0 ? Math.min(...retirementYears) : '';
       
       return {
         ...prev,
@@ -238,6 +262,13 @@ const TransactionDetail = ({
         location_coordinates: prev.plants?.length === 0 && plant.latitude && plant.longitude 
           ? `${plant.latitude}, ${plant.longitude}` 
           : prev.location_coordinates,
+        // Auto-populate planned retirement year if not set
+        planned_retirement_year: prev.planned_retirement_year || earliestRetirement,
+        // Additional aggregated fields
+        annual_co2_mt: totalAnnualCO2 > 0 ? totalAnnualCO2.toFixed(2) : '',
+        combustion_technology: prev.plants?.length === 0 ? plant.combustion_technology : prev.combustion_technology,
+        coal_type: prev.plants?.length === 0 ? plant.coal_type : prev.coal_type,
+        subregion: prev.plants?.length === 0 ? plant.subregion : prev.subregion,
       };
     });
     setPlantSearchQuery('');
@@ -838,6 +869,20 @@ const TransactionDetail = ({
                     {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
                   </select>
                 </div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Primary Funder</label>
+                <select
+                  name="primary_funder"
+                  value={formData.primary_funder || ''}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                >
+                  <option value="">Select funder...</option>
+                  <option value="CATA">CATA</option>
+                  <option value="Rockefeller">Rockefeller Foundation</option>
+                  <option value="Other">Other</option>
+                </select>
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Transition Type</label>
