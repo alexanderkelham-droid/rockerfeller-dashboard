@@ -1743,8 +1743,12 @@ const MapView = ({ userEmail }) => {
                         <p className="text-base font-medium text-gray-700">{transaction?.transaction_confidence_rating ? `${transaction.transaction_confidence_rating}%` : 'N/A'}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Expected Signing Date</p>
-                        <p className="text-base font-medium text-gray-700">{transaction?.expected_signing_date || 'N/A'}</p>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Target Close Date</p>
+                        <p className="text-base font-medium text-gray-700">
+                          {transaction?.deal_timeframe 
+                            ? new Date(transaction.deal_timeframe).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                            : 'N/A'}
+                        </p>
                       </div>
                     </div>
                     

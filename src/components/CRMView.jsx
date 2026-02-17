@@ -272,7 +272,7 @@ const CRMView = ({ userEmail }) => {
           </div>
         </div>
 
-        {(transaction.transaction_confidence_rating !== null || transaction.expected_signing_date) && (
+        {(transaction.transaction_confidence_rating !== null || transaction.deal_timeframe) && (
           <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
             {transaction.transaction_confidence_rating !== null && (
               <div className="flex items-center gap-2">
@@ -288,9 +288,9 @@ const CRMView = ({ userEmail }) => {
                 <span className="text-xs text-gray-500">{transaction.transaction_confidence_rating}%</span>
               </div>
             )}
-            {transaction.expected_signing_date && (
+            {transaction.deal_timeframe && (
               <span className="text-xs text-gray-400">
-                {new Date(transaction.expected_signing_date).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}
+                {new Date(transaction.deal_timeframe).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}
               </span>
             )}
           </div>
@@ -623,8 +623,8 @@ const CRMView = ({ userEmail }) => {
                           : '—'}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-600">
-                        {transaction.expected_signing_date 
-                          ? new Date(transaction.expected_signing_date).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
+                        {transaction.deal_timeframe 
+                          ? new Date(transaction.deal_timeframe).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
                           : '—'}
                       </td>
                       <td className="px-4 py-3">

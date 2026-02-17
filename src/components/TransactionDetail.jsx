@@ -85,17 +85,17 @@ const TransactionDetail = ({
     project_stage: 'concept_proposal',
     key_contacts: '',
     project_name: '',
-    initial_retirement_year: '',  // renamed from planned_retirement_year
-    target_retirement_year: '',   // renamed from actual_retirement_year
+    planned_retirement_year: '',    // Initial/planned retirement year
+    actual_retirement_year: '',     // Target/actual retirement year  
     transition_type: '',
     transaction_stage: 'ideation',
     transaction_status: '',
-    engagement_status: 'no_engagement',  // new CATA field
+    engagement_status: 'no_engagement',
     transaction_confidence_rating: '',
     transaction_next_steps: '',
-    expected_signing_date: '',    // renamed from deal_timeframe
+    deal_timeframe: '',              // Expected signing/close date
     estimated_deal_size: '',
-    deal_currency: 'USD',         // new field
+    deal_currency: 'USD',
     financial_mechanism: '',
     lenders_funders: '',
     planned_post_retirement_status: '',
@@ -105,7 +105,7 @@ const TransactionDetail = ({
     assumptions_confidence_rating: '',
     notes: '',
     assigned_to: '',
-    plants: [],                   // new field for multiple plants
+    plants: [],
   });
 
   const [activeTab, setActiveTab] = useState('summary');
@@ -129,13 +129,12 @@ const TransactionDetail = ({
     if (transaction) {
       setFormData({
         ...transaction,
-        expected_signing_date: transaction.expected_signing_date ? transaction.expected_signing_date.split('T')[0] : 
-                              (transaction.deal_timeframe ? transaction.deal_timeframe.split('T')[0] : ''),
+        deal_timeframe: transaction.deal_timeframe ? transaction.deal_timeframe.split('T')[0] : '',
         funded_delivery_partners: transaction.funded_delivery_partners || [],
         plants: transaction.plants || [],
         deal_currency: transaction.deal_currency || 'USD',
-        initial_retirement_year: transaction.initial_retirement_year || transaction.planned_retirement_year || '',
-        target_retirement_year: transaction.target_retirement_year || transaction.actual_retirement_year || '',
+        planned_retirement_year: transaction.planned_retirement_year || '',
+        actual_retirement_year: transaction.actual_retirement_year || '',
         engagement_status: transaction.engagement_status || 'no_engagement',
       });
       setPlantSearchQuery(transaction.plant_name || '');
@@ -409,12 +408,12 @@ const TransactionDetail = ({
         lifetime_nox_tonnes: formData.lifetime_nox_tonnes === '' ? null : formData.lifetime_nox_tonnes,
         lifetime_co2_tonnes: formData.lifetime_co2_tonnes === '' ? null : formData.lifetime_co2_tonnes,
         project_value: formData.project_value === '' ? null : formData.project_value,
-        initial_retirement_year: formData.initial_retirement_year === '' ? null : formData.initial_retirement_year,
-        target_retirement_year: formData.target_retirement_year === '' ? null : formData.target_retirement_year,
+        planned_retirement_year: formData.planned_retirement_year === '' ? null : formData.planned_retirement_year,
+        actual_retirement_year: formData.actual_retirement_year === '' ? null : formData.actual_retirement_year,
         transaction_confidence_rating: formData.transaction_confidence_rating === '' ? null : formData.transaction_confidence_rating,
         estimated_deal_size: formData.estimated_deal_size === '' ? null : formData.estimated_deal_size,
         assumptions_confidence_rating: formData.assumptions_confidence_rating === '' ? null : formData.assumptions_confidence_rating,
-        expected_signing_date: formData.expected_signing_date || null,
+        deal_timeframe: formData.deal_timeframe || null,
         plants: formData.plants || [],
       };
 
@@ -552,10 +551,10 @@ const TransactionDetail = ({
           {/* Key Metrics */}
           <div className="flex items-center gap-6 text-sm">
             <div className="text-center px-4 border-r border-gray-200">
-              <p className="text-gray-500">Expected Signing</p>
+              <p className="text-gray-500">Target Close Date</p>
               <p className="font-semibold text-gray-900">
-                {formData.expected_signing_date 
-                  ? new Date(formData.expected_signing_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                {formData.deal_timeframe 
+                  ? new Date(formData.deal_timeframe).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
                   : '-'}
               </p>
             </div>
@@ -778,11 +777,11 @@ const TransactionDetail = ({
                 )}
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Expected Signing Date</label>
+                <label className="block text-xs text-gray-500 mb-1">Target Close Date</label>
                 <input
                   type="date"
-                  name="expected_signing_date"
-                  value={formData.expected_signing_date || ''}
+                  name="deal_timeframe"
+                  value={formData.deal_timeframe || ''}
                   onChange={handleChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 />
@@ -1195,12 +1194,12 @@ const TransactionDetail = ({
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Initial Retirement Date</label>
-                  <input type="number" name="initial_retirement_year" value={formData.initial_retirement_year || ''} onChange={handleChange} placeholder="2030" className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+                  <label className="block text-xs text-gray-500 mb-1">Planned Retirement Year</label>
+                  <input type="number" name="planned_retirement_year" value={formData.planned_retirement_year || ''} onChange={handleChange} placeholder="2030" className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Target Retirement Date</label>
-                  <input type="number" name="target_retirement_year" value={formData.target_retirement_year || ''} onChange={handleChange} placeholder="2030" className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
+                  <label className="block text-xs text-gray-500 mb-1">Target Retirement Year</label>
+                  <input type="number" name="actual_retirement_year" value={formData.actual_retirement_year || ''} onChange={handleChange} placeholder="2030" className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
                 </div>
               </div>
               <div>
