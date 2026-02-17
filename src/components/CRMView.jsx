@@ -13,12 +13,12 @@ const PROJECT_STAGES = [
   { id: 'transaction_complete', label: 'Transaction Complete', color: 'border-l-emerald-500', bgColor: 'bg-emerald-50', textColor: 'text-emerald-700', description: 'Successfully closed transaction' },
 ];
 
-// Engagement status (formerly transaction status dropdown)
+// Engagement status - Pipeline columns (reordered for workflow)
 const ENGAGEMENT_STATUSES = [
-  { id: 'concept_proposal', label: 'Concept/Proposal Development', color: 'bg-blue-500' },
-  { id: 'in_delivery', label: 'In Delivery', color: 'bg-amber-500' },
-  { id: 'completed', label: 'Completed', color: 'bg-emerald-500' },
-  { id: 'no_engagement', label: 'No Engagement', color: 'bg-gray-400' },
+  { id: 'no_engagement', label: 'No Engagement', color: 'bg-gray-400', bgColor: 'bg-gray-50', textColor: 'text-gray-700', borderColor: 'border-l-gray-400', description: 'Not yet engaged with stakeholders' },
+  { id: 'concept_proposal', label: 'Concept/Proposal Development', color: 'bg-blue-500', bgColor: 'bg-blue-50', textColor: 'text-blue-700', borderColor: 'border-l-blue-500', description: 'Developing project concept and proposal' },
+  { id: 'in_delivery', label: 'In Delivery', color: 'bg-amber-500', bgColor: 'bg-amber-50', textColor: 'text-amber-700', borderColor: 'border-l-amber-500', description: 'Active delivery and implementation' },
+  { id: 'completed', label: 'Completed', color: 'bg-emerald-500', bgColor: 'bg-emerald-50', textColor: 'text-emerald-700', borderColor: 'border-l-emerald-500', description: 'Successfully completed engagement' },
 ];
 
 // RAG status colors (project health indicator)
@@ -106,6 +106,15 @@ const CRMView = ({ userEmail }) => {
     return grouped;
   }, [filteredTransactions]);
 
+  // Group transactions by engagement status for pipeline view
+  const transactionsByEngagement = useMemo(() => {
+    const grouped = {};
+    ENGAGEMENT_STATUSES.forEach(engagement => {
+      grouped[engagement.id] = filteredTransactions.filter(t => t.engagement_status === engagement.id);
+    });
+    return grouped;
+  }, [filteredTransactions]);
+
   const handleDragStart = (e, transaction) => {
     setDraggedTransaction(transaction);
     e.dataTransfer.effectAllowed = 'move';
@@ -116,26 +125,26 @@ const CRMView = ({ userEmail }) => {
     e.dataTransfer.dropEffect = 'move';
   };
 
-  const handleDrop = async (e, newStage) => {
+  const handleDrop = async (e, newEngagement) => {
     e.preventDefault();
-    if (!draggedTransaction || draggedTransaction.transaction_stage === newStage) {
+    if (!draggedTransaction || draggedTransaction.engagement_status === newEngagement) {
       setDraggedTransaction(null);
       return;
     }
 
     setTransactions(prev => prev.map(t => 
-      t.id === draggedTransaction.id ? { ...t, transaction_stage: newStage } : t
+      t.id === draggedTransaction.id ? { ...t, engagement_status: newEngagement } : t
     ));
 
     try {
       const { error } = await supabase
         .from('transactions')
-        .update({ transaction_stage: newStage })
+        .update({ engagement_status: newEngagement })
         .eq('id', draggedTransaction.id);
       
       if (error) throw error;
     } catch (error) {
-      console.error('Error updating transaction stage:', error);
+      console.error('Error updating engagement status:', error);
       fetchTransactions();
     }
 
@@ -222,7 +231,7 @@ const CRMView = ({ userEmail }) => {
         draggable
         onDragStart={(e) => handleDragStart(e, transaction)}
         onClick={() => setSelectedTransaction(transaction)}
-        className={`bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:shadow-lg transition-all duration-200 border-l-4 ${stage?.color || 'border-l-gray-300'}`}
+        className={`bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:shadow-lg transition-all duration-200 border-l-4 ${engagement?.borderColor || 'border-l-gray-300'}`}
       >
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1 min-w-0">
@@ -253,11 +262,11 @@ const CRMView = ({ userEmail }) => {
             </div>
           )}
           
-          {/* Engagement Status Badge */}
-          {engagement && (
+          {/* Project Stage Badge (e.g., Pre-Feasibility, Full Feasibility) */}
+          {stage && (
             <div className="flex items-center gap-2">
-              <span className={`px-2 py-0.5 text-xs rounded-full text-white ${engagement.color}`}>
-                {engagement.label}
+              <span className={`px-2 py-0.5 text-xs rounded-full ${stage.bgColor} ${stage.textColor} font-medium`}>
+                {stage.label}
               </span>
             </div>
           )}
@@ -518,37 +527,37 @@ const CRMView = ({ userEmail }) => {
           <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary-600 border-t-transparent"></div>
         </div>
       ) : viewMode === 'pipeline' ? (
-        /* Pipeline View - CATA Project Stages */
+        /* Pipeline View - Engagement Status Columns */
         <div className="flex-1 overflow-x-auto p-4">
           <div className="flex gap-3 min-w-max h-full">
-            {PROJECT_STAGES.map(stage => (
+            {ENGAGEMENT_STATUSES.map(engagement => (
               <div
-                key={stage.id}
+                key={engagement.id}
                 onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, stage.id)}
-                className="w-72 flex-shrink-0 flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm"
+                onDrop={(e) => handleDrop(e, engagement.id)}
+                className="w-80 flex-shrink-0 flex flex-col bg-white rounded-xl border border-gray-200 shadow-sm"
               >
                 {/* Column Header */}
-                <div className={`px-4 py-3 border-b border-gray-100 ${stage.bgColor} rounded-t-xl`}>
+                <div className={`px-4 py-3 border-b border-gray-100 ${engagement.bgColor} rounded-t-xl`}>
                   <div className="flex items-center justify-between">
                     <div>
-                      <h3 className={`font-medium text-sm ${stage.textColor}`}>{stage.label}</h3>
-                      {stage.description && (
-                        <p className="text-xs text-gray-500 mt-0.5">{stage.description}</p>
+                      <h3 className={`font-medium text-sm ${engagement.textColor}`}>{engagement.label}</h3>
+                      {engagement.description && (
+                        <p className="text-xs text-gray-500 mt-0.5">{engagement.description}</p>
                       )}
                     </div>
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full bg-white/60 ${stage.textColor}`}>
-                      {transactionsByStage[stage.id]?.length || 0}
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full bg-white/60 ${engagement.textColor}`}>
+                      {transactionsByEngagement[engagement.id]?.length || 0}
                     </span>
                   </div>
                 </div>
                 
                 {/* Cards */}
                 <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                  {transactionsByStage[stage.id]?.map(transaction => (
+                  {transactionsByEngagement[engagement.id]?.map(transaction => (
                     <ProjectCard key={transaction.id} transaction={transaction} />
                   ))}
-                  {transactionsByStage[stage.id]?.length === 0 && (
+                  {transactionsByEngagement[engagement.id]?.length === 0 && (
                     <div className="text-center py-12 text-gray-400 text-sm">
                       No projects
                     </div>
