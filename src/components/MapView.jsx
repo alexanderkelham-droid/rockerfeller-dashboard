@@ -533,44 +533,22 @@ const MapView = ({ userEmail }) => {
   const toggleGlobalPlants = () => {
     console.log('toggleGlobalPlants called. showAllGlobalPlants:', showAllGlobalPlants);
     if (!showAllGlobalPlants) {
-      // Load and show global plants
-      const plantsToShow = filteredGlobalPlants.length > 0 ? filteredGlobalPlants : globalPlants;
-      console.log('plantsToShow.length:', plantsToShow.length);
-      if (plantsToShow.length === 0) {
-        console.log('Calling loadGlobalPlants from toggleGlobalPlants...');
-        loadGlobalPlants((plants) => {
-          // Add markers in batches to prevent UI blocking
-          const batchSize = 100;
-          let index = 0;
-          
-          const addBatch = () => {
-            const batch = plants.slice(index, index + batchSize);
-            batch.forEach(plant => addMarkerToMap(plant, false, true));
-            
-            index += batchSize;
-            if (index < plants.length) {
-              setTimeout(addBatch, 10); // Small delay between batches
-            }
-          };
-          
-          addBatch();
-        });
-      } else {
-        // Add markers in batches
+      // Always reload from Supabase for fresh data
+      console.log('Forcing reload of global plants from Supabase...');
+      loadGlobalPlants((plants) => {
+        // Add markers in batches to prevent UI blocking
         const batchSize = 100;
         let index = 0;
-        
         const addBatch = () => {
-          const batch = plantsToShow.slice(index, index + batchSize);
+          const batch = plants.slice(index, index + batchSize);
           batch.forEach(plant => addMarkerToMap(plant, false, true));
           index += batchSize;
-          if (index < plantsToShow.length) {
-            setTimeout(addBatch, 10);
+          if (index < plants.length) {
+            setTimeout(addBatch, 10); // Small delay between batches
           }
         };
-        
         addBatch();
-      }
+      });
     } else {
       // Hide global plants - remove their markers
       markers.forEach(marker => {
