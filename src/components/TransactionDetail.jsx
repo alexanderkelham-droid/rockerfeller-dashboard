@@ -10,6 +10,7 @@ const PROJECT_STAGES = [
   { id: 'deal_structuring', label: 'Deal Structuring', description: 'Transaction design & negotiation' },
   { id: 'closing', label: 'Closing', description: 'Final approvals & signing' },
   { id: 'transaction_complete', label: 'Transaction Complete', description: 'Successfully closed' },
+  { id: 'bau', label: 'BAU', description: 'Business as usual / ongoing operations' },
 ];
 
 // Engagement status options
@@ -810,6 +811,20 @@ const TransactionDetail = ({
                     {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 )}
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Transaction Stage</label>
+                <select
+                  name="transaction_stage"
+                  value={formData.transaction_stage || ''}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                >
+                  <option value="">Select stage...</option>
+                  {PROJECT_STAGES.map(stage => (
+                    <option key={stage.id} value={stage.id}>{stage.label}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Target Close Date</label>

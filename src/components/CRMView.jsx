@@ -11,6 +11,7 @@ const PROJECT_STAGES = [
   { id: 'deal_structuring', label: 'Deal Structuring', color: 'border-l-amber-500', bgColor: 'bg-amber-50', textColor: 'text-amber-700', description: 'Financial and legal structuring' },
   { id: 'closing', label: 'Closing', color: 'border-l-orange-500', bgColor: 'bg-orange-50', textColor: 'text-orange-700', description: 'Final negotiations and agreement signing' },
   { id: 'transaction_complete', label: 'Transaction Complete', color: 'border-l-emerald-500', bgColor: 'bg-emerald-50', textColor: 'text-emerald-700', description: 'Successfully closed transaction' },
+  { id: 'bau', label: 'BAU', color: 'border-l-purple-500', bgColor: 'bg-purple-50', textColor: 'text-purple-700', description: 'Business as usual / ongoing operations' },
 ];
 
 // Engagement status - Pipeline columns (reordered for workflow)
