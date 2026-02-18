@@ -61,6 +61,17 @@ const COUNTRIES = [
 
 const DELIVERY_PARTNERS = ['CSV', 'RMI', 'CT', 'CCSF', 'World Bank', 'ADB', 'AIIB', 'IADB', 'AfDB', 'EBRD', 'EIB', 'IFC', 'JICA', 'KfW', 'OPIC', 'Other'];
 
+// Activity types for CRM-style notes
+const ACTIVITY_TYPES = [
+  { id: 'note', label: 'Note', icon: '📝', color: 'bg-gray-100 text-gray-600', description: 'General note or comment' },
+  { id: 'email', label: 'Email', icon: '📧', color: 'bg-blue-100 text-blue-600', description: 'Email correspondence' },
+  { id: 'call', label: 'Phone Call', icon: '📞', color: 'bg-green-100 text-green-600', description: 'Phone conversation' },
+  { id: 'meeting', label: 'Meeting', icon: '👥', color: 'bg-purple-100 text-purple-600', description: 'In-person or virtual meeting' },
+  { id: 'task', label: 'Task', icon: '✓', color: 'bg-amber-100 text-amber-600', description: 'Action item or to-do' },
+  { id: 'stage_change', label: 'Stage Change', icon: '🔄', color: 'bg-indigo-100 text-indigo-600', description: 'Project stage transition' },
+  { id: 'document', label: 'Document', icon: '📄', color: 'bg-cyan-100 text-cyan-600', description: 'Document shared or received' },
+];
+
 const TransactionDetail = ({ 
   transaction, 
   onSave, 
@@ -122,7 +133,8 @@ const TransactionDetail = ({
   const [nextSteps, setNextSteps] = useState([]);
   const [newNextStep, setNewNextStep] = useState('');
   const [showActivityForm, setShowActivityForm] = useState(false);
-  const [newActivity, setNewActivity] = useState({ type: 'note', title: '', description: '' });
+  const [newActivity, setNewActivity] = useState({ type: 'note', subject: '', description: '' });
+  const [activityFilter, setActivityFilter] = useState('all');
   
   // Plant search state
   const [plantSearchQuery, setPlantSearchQuery] = useState('');
@@ -398,14 +410,15 @@ const TransactionDetail = ({
   };
 
   const handleAddActivity = async () => {
-    if (!newActivity.title.trim()) return;
+    if (!newActivity.description.trim()) return;
     
+    const activityType = ACTIVITY_TYPES.find(t => t.id === newActivity.type);
     await addActivity({
       type: newActivity.type,
-      title: newActivity.title,
+      title: newActivity.subject.trim() || `${activityType?.label || 'Note'}`,
       description: newActivity.description,
     });
-    setNewActivity({ type: 'note', title: '', description: '' });
+    setNewActivity({ type: 'note', subject: '', description: '' });
     setShowActivityForm(false);
   };
 
@@ -1392,127 +1405,200 @@ const TransactionDetail = ({
           )}
         </div>
 
-        {/* Middle Column - Timeline */}
+        {/* Middle Column - Notes & Activities */}
         <div className="w-1/3 border-r border-gray-200 bg-white overflow-hidden flex flex-col">
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-gray-900">Timeline</h3>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowActivityForm(!showActivityForm)}
-                  className="p-1.5 hover:bg-gray-100 rounded"
-                  title="Add activity"
-                >
-                  <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-            
-            {/* Quick Note Input */}
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newNote}
-                onChange={(e) => setNewNote(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleAddNote()}
-                placeholder="Enter a note..."
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-sm"
-              />
+              <h3 className="font-semibold text-gray-900">Notes & Activities</h3>
               <button
-                onClick={handleAddNote}
-                disabled={!newNote.trim() || !transaction?.id}
-                className="px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => setShowActivityForm(!showActivityForm)}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  showActivityForm 
+                    ? 'bg-gray-200 text-gray-700' 
+                    : 'bg-primary-600 text-white hover:bg-primary-700'
+                }`}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
+                Add Note
               </button>
             </div>
 
-            {/* Activity Form */}
+            {/* Add Activity Form */}
             {showActivityForm && (
-              <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                <select
-                  value={newActivity.type}
-                  onChange={(e) => setNewActivity(prev => ({ ...prev, type: e.target.value }))}
-                  className="w-full px-3 py-2 mb-2 border border-gray-300 rounded text-sm"
-                >
-                  <option value="note">📝 Note</option>
-                  <option value="email">📧 Email</option>
-                  <option value="meeting">📅 Meeting</option>
-                  <option value="call">📞 Call</option>
-                  <option value="task">✓ Task</option>
-                </select>
-                <input
-                  type="text"
-                  value={newActivity.title}
-                  onChange={(e) => setNewActivity(prev => ({ ...prev, title: e.target.value }))}
-                  placeholder="Title..."
-                  className="w-full px-3 py-2 mb-2 border border-gray-300 rounded text-sm"
-                />
-                <textarea
-                  value={newActivity.description}
-                  onChange={(e) => setNewActivity(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="Description..."
-                  rows={2}
-                  className="w-full px-3 py-2 mb-2 border border-gray-300 rounded text-sm"
-                />
+              <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 mb-4">
+                {/* Activity Type Selection */}
+                <div className="mb-3">
+                  <label className="block text-xs font-medium text-gray-700 mb-1.5">Source / Type</label>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {ACTIVITY_TYPES.filter(t => t.id !== 'stage_change').map(type => (
+                      <button
+                        key={type.id}
+                        onClick={() => setNewActivity(prev => ({ ...prev, type: type.id }))}
+                        className={`flex flex-col items-center p-2 rounded-lg border-2 transition-all text-xs ${
+                          newActivity.type === type.id
+                            ? 'border-primary-500 bg-primary-50'
+                            : 'border-gray-200 bg-white hover:border-gray-300'
+                        }`}
+                        title={type.description}
+                      >
+                        <span className="text-lg mb-0.5">{type.icon}</span>
+                        <span className="font-medium truncate w-full text-center">{type.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Subject (optional) */}
+                <div className="mb-3">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Subject (optional)</label>
+                  <input
+                    type="text"
+                    value={newActivity.subject}
+                    onChange={(e) => setNewActivity(prev => ({ ...prev, subject: e.target.value }))}
+                    placeholder={`e.g., Call with stakeholder, Meeting notes...`}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  />
+                </div>
+
+                {/* Description */}
+                <div className="mb-3">
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Details *</label>
+                  <textarea
+                    value={newActivity.description}
+                    onChange={(e) => setNewActivity(prev => ({ ...prev, description: e.target.value }))}
+                    placeholder="Enter the details of the conversation, meeting notes, email summary, etc..."
+                    rows={4}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
+                  />
+                </div>
+
+                {/* Action Buttons */}
                 <div className="flex gap-2">
                   <button
                     onClick={handleAddActivity}
-                    disabled={!newActivity.title.trim() || !transaction?.id}
-                    className="flex-1 px-3 py-1.5 bg-primary-600 text-white rounded text-sm hover:bg-primary-700 disabled:opacity-50"
+                    disabled={!newActivity.description.trim() || !transaction?.id}
+                    className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    Add Activity
+                    Save Note
                   </button>
                   <button
-                    onClick={() => setShowActivityForm(false)}
-                    className="px-3 py-1.5 border border-gray-300 rounded text-sm hover:bg-gray-100"
+                    onClick={() => {
+                      setNewActivity({ type: 'note', subject: '', description: '' });
+                      setShowActivityForm(false);
+                    }}
+                    className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
                   >
                     Cancel
                   </button>
                 </div>
               </div>
             )}
+
+            {/* Filter Tabs */}
+            <div className="flex gap-1 overflow-x-auto pb-1">
+              <button
+                onClick={() => setActivityFilter('all')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                  activityFilter === 'all' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                All
+              </button>
+              {ACTIVITY_TYPES.slice(0, 5).map(type => (
+                <button
+                  key={type.id}
+                  onClick={() => setActivityFilter(type.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1 ${
+                    activityFilter === type.id ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  <span>{type.icon}</span>
+                  {type.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Activities List */}
-          <div className="flex-1 overflow-y-auto p-4">
+          <div className="flex-1 overflow-y-auto">
             {!transaction?.id ? (
-              <div className="text-center py-8 text-gray-400 text-sm">
-                Save the transaction to start tracking activities
+              <div className="flex flex-col items-center justify-center h-full text-gray-400 p-8">
+                <svg className="w-12 h-12 mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                </svg>
+                <p className="text-sm font-medium">Save the project first</p>
+                <p className="text-xs">to start tracking activities</p>
               </div>
-            ) : activities.length === 0 ? (
-              <div className="text-center py-8 text-gray-400 text-sm">
-                No activities yet. Add a note to get started.
+            ) : activities.filter(a => activityFilter === 'all' || a.activity_type === activityFilter).length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-gray-400 p-8">
+                <svg className="w-12 h-12 mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                <p className="text-sm font-medium">No notes yet</p>
+                <p className="text-xs">Add your first note to track communications</p>
               </div>
             ) : (
-              <div className="space-y-4">
-                {activities.map((activity) => (
-                  <div key={activity.id} className="flex gap-3">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                      activity.activity_type === 'stage_change' ? 'bg-purple-100 text-purple-600' :
-                      activity.activity_type === 'email' ? 'bg-blue-100 text-blue-600' :
-                      activity.activity_type === 'meeting' ? 'bg-green-100 text-green-600' :
-                      activity.activity_type === 'call' ? 'bg-yellow-100 text-yellow-600' :
-                      'bg-gray-100 text-gray-600'
-                    }`}>
-                      {getActivityIcon(activity.activity_type)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm text-gray-900">{activity.title}</span>
-                        <span className="text-xs text-gray-400">{formatTimeAgo(activity.created_at)}</span>
+              <div className="divide-y divide-gray-100">
+                {activities
+                  .filter(a => activityFilter === 'all' || a.activity_type === activityFilter)
+                  .map((activity) => {
+                    const activityType = ACTIVITY_TYPES.find(t => t.id === activity.activity_type) || ACTIVITY_TYPES[0];
+                    return (
+                      <div key={activity.id} className="p-4 hover:bg-gray-50 transition-colors">
+                        <div className="flex gap-3">
+                          {/* Activity Icon */}
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${activityType.color}`}>
+                            <span className="text-lg">{activityType.icon}</span>
+                          </div>
+                          
+                          {/* Activity Content */}
+                          <div className="flex-1 min-w-0">
+                            {/* Header */}
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <span className="font-medium text-sm text-gray-900">
+                                  {activity.title || activityType.label}
+                                </span>
+                                <span className="mx-1.5 text-gray-300">•</span>
+                                <span className={`text-xs px-1.5 py-0.5 rounded ${activityType.color}`}>
+                                  {activityType.label}
+                                </span>
+                              </div>
+                            </div>
+                            
+                            {/* Description */}
+                            {activity.description && (
+                              <p className="text-sm text-gray-600 mt-2 whitespace-pre-wrap">{activity.description}</p>
+                            )}
+                            
+                            {/* Footer - Timestamp and Author */}
+                            <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                              <span className="flex items-center gap-1">
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                {activity.created_at ? new Date(activity.created_at).toLocaleDateString('en-GB', {
+                                  day: 'numeric',
+                                  month: 'short',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                }) : 'Unknown date'}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                </svg>
+                                {activity.created_by || 'Unknown'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      {activity.description && (
-                        <p className="text-sm text-gray-600 mt-1">{activity.description}</p>
-                      )}
-                      <p className="text-xs text-gray-400 mt-1">by {activity.created_by || 'Unknown'}</p>
-                    </div>
-                  </div>
-                ))}
+                    );
+                  })}
               </div>
             )}
           </div>
