@@ -173,44 +173,72 @@ const AddPlantSearch = ({ onAddPlant, onToggleGlobal, showingGlobal, onFilteredP
   // Separate effect for search results display
   useEffect(() => {
     if (searchTerm.trim() === '') {
-      setFilteredPlants([]);
+      // Show all deduplicated plants when no search term
+      // Use the same deduplication as the main effect
+      const noFilters =
+        capacityRange[0] === minCapacity &&
+        capacityRange[1] === maxCapacity &&
+        selectedCountries.length === 0 &&
+        selectedStatus === 'all';
+      let filtered = globalPlants;
+      if (!noFilters) {
+        filtered = globalPlants.filter(plant => {
+          // Must have coordinates
+          if (!plant.Latitude || !plant.Longitude) return false;
+          // Capacity filter
+          const capacity = parseFloat(plant['Capacity (MW)']) || 0;
+          if (capacity < capacityRange[0] || capacity > capacityRange[1]) return false;
+          // Country filter
+          if (selectedCountries.length > 0 && !selectedCountries.includes(plant['Country/Area'])) {
+            return false;
+          }
+          // Status filter
+          if (selectedStatus !== 'all' && plant['Status']?.toLowerCase() !== selectedStatus.toLowerCase()) {
+            return false;
+          }
+          return true;
+        });
+      }
+      // Deduplicate by plant name and coordinates
+      const uniquePlants = new Map();
+      filtered.forEach(plant => {
+        const plantKey = `${plant['Plant name']}_${plant.Latitude}_${plant.Longitude}`;
+        if (!uniquePlants.has(plantKey)) {
+          uniquePlants.set(plantKey, plant);
+        }
+      });
+      setFilteredPlants(Array.from(uniquePlants.values()));
       return;
     }
 
+    // If searching, filter and limit to 50
     const filtered = globalPlants
       .filter(plant => {
         const plantName = (plant['Plant name'] || '').toLowerCase();
         const country = (plant['Country/Area'] || '').toLowerCase();
         const unitName = (plant['Unit name'] || '').toLowerCase();
         const search = searchTerm.toLowerCase();
-        
         // Text search
         const matchesSearch = plantName.includes(search) || 
                              country.includes(search) || 
                              unitName.includes(search);
-        
         if (!matchesSearch) return false;
-        
         // Capacity filter
         const capacity = parseFloat(plant['Capacity (MW)']) || 0;
         if (capacity < capacityRange[0] || capacity > capacityRange[1]) return false;
-        
         // Country filter
         if (selectedCountries.length > 0 && !selectedCountries.includes(plant['Country/Area'])) {
           return false;
         }
-        
         // Status filter
         if (selectedStatus !== 'all' && plant['Status']?.toLowerCase() !== selectedStatus.toLowerCase()) {
           return false;
         }
-        
         return true;
       })
       .slice(0, 50); // Limit to 50 results for performance
-
     setFilteredPlants(filtered);
-  }, [searchTerm, globalPlants, capacityRange, selectedCountries, selectedStatus]);
+  }, [searchTerm, globalPlants, capacityRange, selectedCountries, selectedStatus, minCapacity, maxCapacity]);
   
   // Get unique countries from database
   const uniqueCountries = [...new Set(globalPlants.map(p => p['Country/Area']).filter(Boolean))].sort();
