@@ -407,6 +407,7 @@ const MapView = ({ userEmail }) => {
   }, [filteredGlobalPlants, showAllGlobalPlants]);
 
   const loadGlobalPlants = useCallback(async (callback) => {
+    console.log('loadGlobalPlants called');
     try {
       // Fetch all operating plants from the database (paginated)
       let allData = [];
@@ -530,11 +531,13 @@ const MapView = ({ userEmail }) => {
   }, [impactResults]);
 
   const toggleGlobalPlants = () => {
+    console.log('toggleGlobalPlants called. showAllGlobalPlants:', showAllGlobalPlants);
     if (!showAllGlobalPlants) {
       // Load and show global plants
       const plantsToShow = filteredGlobalPlants.length > 0 ? filteredGlobalPlants : globalPlants;
-      
+      console.log('plantsToShow.length:', plantsToShow.length);
       if (plantsToShow.length === 0) {
+        console.log('Calling loadGlobalPlants from toggleGlobalPlants...');
         loadGlobalPlants((plants) => {
           // Add markers in batches to prevent UI blocking
           const batchSize = 100;
@@ -560,7 +563,6 @@ const MapView = ({ userEmail }) => {
         const addBatch = () => {
           const batch = plantsToShow.slice(index, index + batchSize);
           batch.forEach(plant => addMarkerToMap(plant, false, true));
-          
           index += batchSize;
           if (index < plantsToShow.length) {
             setTimeout(addBatch, 10);
