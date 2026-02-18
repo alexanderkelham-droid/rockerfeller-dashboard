@@ -360,7 +360,20 @@ const TransactionDetail = ({
       await addActivity({
         type: 'stage_change',
         title: 'Stage Changed',
-        description: `Stage changed from "${PROJECT_STAGES.find(s => s.id === oldStage)?.label || oldStage}" to "${PROJECT_STAGES.find(s => s.id === stageId)?.label}"`,
+        description: `Transaction stage changed from "${PROJECT_STAGES.find(s => s.id === oldStage)?.label || oldStage}" to "${PROJECT_STAGES.find(s => s.id === stageId)?.label}"`,
+      });
+    }
+  };
+
+  const handleEngagementClick = async (statusId) => {
+    const oldStatus = formData.engagement_status;
+    setFormData(prev => ({ ...prev, engagement_status: statusId }));
+    
+    if (transaction?.id && oldStatus !== statusId) {
+      await addActivity({
+        type: 'stage_change',
+        title: 'Engagement Status Changed',
+        description: `Engagement status changed from "${ENGAGEMENT_STATUSES.find(s => s.id === oldStatus)?.label || oldStatus}" to "${ENGAGEMENT_STATUSES.find(s => s.id === statusId)?.label}"`,
       });
     }
   };
@@ -645,16 +658,17 @@ const TransactionDetail = ({
           </div>
           
           <div className="flex items-center">
-            {PROJECT_STAGES.map((stage, index) => {
-              const isActive = index === currentStageIndex;
-              const isCompleted = index < currentStageIndex;
-              const isLast = index === PROJECT_STAGES.length - 1;
+            {ENGAGEMENT_STATUSES.map((status, index) => {
+              const currentEngagementIndex = ENGAGEMENT_STATUSES.findIndex(s => s.id === formData.engagement_status);
+              const isActive = index === currentEngagementIndex;
+              const isCompleted = index < currentEngagementIndex;
+              const isLast = index === ENGAGEMENT_STATUSES.length - 1;
               
               return (
-                <div key={stage.id} className="flex items-center flex-1">
+                <div key={status.id} className="flex items-center flex-1">
                   <button
-                    onClick={() => handleStageClick(stage.id)}
-                    title={stage.description}
+                    onClick={() => handleEngagementClick(status.id)}
+                    title={status.label}
                     className={`flex-1 relative py-3 px-4 text-sm font-medium transition-colors ${
                       isActive 
                         ? 'bg-primary-600 text-white' 
@@ -673,7 +687,7 @@ const TransactionDetail = ({
                       ) : (
                         <div className="w-2 h-2 bg-gray-400 rounded-full" />
                       )}
-                      <span className="hidden lg:inline">{stage.label}</span>
+                      <span>{status.label}</span>
                     </div>
                   </button>
                   {!isLast && (
