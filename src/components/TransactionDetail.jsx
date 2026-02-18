@@ -430,7 +430,7 @@ const TransactionDetail = ({
     
     try {
       // Remove fields that don't exist in the database yet
-      const { annual_co2_mt, combustion_technology, coal_type, subregion, remaining_lifetime_years, primary_funder, ...restFormData } = formData;
+      const { annual_co2_mt, combustion_technology, coal_type, subregion, remaining_lifetime_years, ...restFormData } = formData;
       
       const dataToSave = {
         ...restFormData,
@@ -449,6 +449,7 @@ const TransactionDetail = ({
         assumptions_confidence_rating: formData.assumptions_confidence_rating === '' ? null : formData.assumptions_confidence_rating,
         deal_timeframe: formData.deal_timeframe || null,
         plants: formData.plants || [],
+        primary_funder: formData.primary_funder || null,
       };
 
       await onSave(dataToSave);
