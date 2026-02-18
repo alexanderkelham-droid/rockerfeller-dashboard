@@ -429,8 +429,11 @@ const TransactionDetail = ({
     setIsSaving(true);
     
     try {
+      // Remove fields that don't exist in the database yet
+      const { annual_co2_mt, combustion_technology, coal_type, subregion, remaining_lifetime_years, primary_funder, ...restFormData } = formData;
+      
       const dataToSave = {
-        ...formData,
+        ...restFormData,
         transaction_next_steps: JSON.stringify(nextSteps),
         capacity_mw: formData.capacity_mw === '' ? null : formData.capacity_mw,
         start_year: formData.start_year === '' ? null : formData.start_year,
