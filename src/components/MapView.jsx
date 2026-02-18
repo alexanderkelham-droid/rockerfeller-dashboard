@@ -420,9 +420,9 @@ const MapView = ({ userEmail }) => {
           .select('*')
           .eq('status', 'operating')
           .range(page * pageSize, (page + 1) * pageSize - 1);
-        
+
         if (error) throw error;
-        
+
         if (data && data.length > 0) {
           allData = allData.concat(data);
           page++;
@@ -431,30 +431,36 @@ const MapView = ({ userEmail }) => {
           hasMore = false;
         }
       }
-      
+
       console.log(`Global plants query returned ${allData.length} total operating plants`);
-      
-      // Get the list of plant names from impact results for marking
-      const impactPlantNames = new Set(
-        impactResults
-          .map(result => result['Unique plant name']?.toLowerCase()?.trim())
-          .filter(Boolean)
-      );
-      
+      // Debug: print a few Turkey and India plants
+      const debugTurkey = allData.filter(p => (p.country_area || p.Country || '').toLowerCase().includes('turkey'));
+      const debugIndia = allData.filter(p => (p.country_area || p.Country || '').toLowerCase().includes('india'));
+      console.log('Sample Turkey plants:', debugTurkey.slice(0, 5));
+      console.log('Sample India plants:', debugIndia.slice(0, 5));
+
       // Group by unique plant (not by unit) and store unit details
       const uniquePlants = new Map();
       const plantUnitsMap = new Map(); // Store unit details for each plant
-      
+
       let skippedNoCoords = 0;
-      
+
       allData.forEach(plant => {
+        // Debug: log plant if it's Turkey or India
+        if ((plant.country_area || plant.Country || '').toLowerCase().includes('turkey') || (plant.country_area || plant.Country || '').toLowerCase().includes('india')) {
+          console.log('Checking plant for deduplication:', plant.plant_name, plant.latitude, plant.longitude);
+        }
         if (!plant.latitude || !plant.longitude) {
           skippedNoCoords++;
+          // Debug: log skipped plant
+          if ((plant.country_area || plant.Country || '').toLowerCase().includes('turkey') || (plant.country_area || plant.Country || '').toLowerCase().includes('india')) {
+            console.warn('Skipped plant due to missing coordinates:', plant.plant_name, plant.latitude, plant.longitude);
+          }
           return;
         }
-        
+
         const plantKey = `${plant.plant_name}_${plant.latitude}_${plant.longitude}`;
-        
+
         // Store unit details
         if (!plantUnitsMap.has(plantKey)) {
           plantUnitsMap.set(plantKey, []);
@@ -463,35 +469,34 @@ const MapView = ({ userEmail }) => {
           unitName: plant.unit_name,
           capacity: parseFloat(plant.capacity_mw) || 0
         });
-        
-        // Check if this plant has impact data
-        const plantName = plant.plant_name?.toLowerCase()?.trim();
-        const hasImpactData = plantName && impactPlantNames.has(plantName);
-        
+
         // If we haven't seen this plant yet, or if this unit has higher capacity, use it
         if (!uniquePlants.has(plantKey)) {
-          uniquePlants.set(plantKey, { ...plant, unitDetails: [], hasImpactData });
+          uniquePlants.set(plantKey, { ...plant, unitDetails: [] });
         } else {
           const existing = uniquePlants.get(plantKey);
           const currentCapacity = parseFloat(plant.capacity_mw) || 0;
           const existingCapacity = parseFloat(existing.capacity_mw) || 0;
-          
           // Sum up capacities for the same plant
           uniquePlants.set(plantKey, {
             ...existing,
             capacity_mw: existingCapacity + currentCapacity,
-            hasImpactData: existing.hasImpactData || hasImpactData,
           });
         }
       });
-      
+
       console.log(`Skipped ${skippedNoCoords} plants with no coordinates`);
-      
+      // Debug: print deduped Turkey/India plants
+      const dedupedTurkey = Array.from(uniquePlants.values()).filter(p => (p.country_area || p.Country || '').toLowerCase().includes('turkey'));
+      const dedupedIndia = Array.from(uniquePlants.values()).filter(p => (p.country_area || p.Country || '').toLowerCase().includes('india'));
+      console.log('Deduped Turkey plants:', dedupedTurkey.slice(0, 5));
+      console.log('Deduped India plants:', dedupedIndia.slice(0, 5));
+
       // Attach unit details to each plant
       uniquePlants.forEach((plant, key) => {
         plant.unitDetails = plantUnitsMap.get(key) || [];
       });
-      
+
       // Convert to array and process
       const processedGlobal = Array.from(uniquePlants.values()).map(plant => ({
         'No': `GLOBAL-${plant.gem_location_id || Math.random()}`,
@@ -513,14 +518,10 @@ const MapView = ({ userEmail }) => {
         latitude: parseFloat(plant.latitude),
         longitude: parseFloat(plant.longitude),
         isGlobal: true,
-        hasImpactData: plant.hasImpactData || false,
         unitDetails: plant.unitDetails || [], // Include unit details!
       }));
-      
+
       console.log(`Loaded ${processedGlobal.length} unique plants from global database`);
-      const withImpact = processedGlobal.filter(p => p.hasImpactData).length;
-      console.log(`${withImpact} plants have impact data available`);
-      
       setGlobalPlants(processedGlobal);
       if (callback) callback(processedGlobal);
     } catch (error) {
