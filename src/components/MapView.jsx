@@ -535,6 +535,7 @@ const MapView = ({ userEmail }) => {
     if (!showAllGlobalPlants) {
       // Always reload from Supabase for fresh data
       console.log('Forcing reload of global plants from Supabase...');
+      removeAllGlobalMarkers(); // Remove any previously loaded global markers (including the initial 363)
       loadGlobalPlants((plants) => {
         // Add markers in batches to prevent UI blocking
         const batchSize = 100;
@@ -551,15 +552,19 @@ const MapView = ({ userEmail }) => {
       });
     } else {
       // Hide global plants - remove their markers
-      markers.forEach(marker => {
-        const plantData = marker._element?.__plantData;
-        if (plantData?.isGlobal) {
-          marker.remove();
-        }
-      });
-      setMarkers(prev => prev.filter(m => !m._element?.__plantData?.isGlobal));
+      removeAllGlobalMarkers();
     }
     setShowAllGlobalPlants(!showAllGlobalPlants);
+  };
+
+  const removeAllGlobalMarkers = () => {
+    markers.forEach(marker => {
+      const plantData = marker._element?.__plantData;
+      if (plantData?.isGlobal) {
+        marker.remove();
+      }
+    });
+    setMarkers(prev => prev.filter(m => !m._element?.__plantData?.isGlobal));
   };
 
   const addMarkerToMap = (plant, isNewlyAdded = false, isGlobal = false) => {
