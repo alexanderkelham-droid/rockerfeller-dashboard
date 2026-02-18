@@ -83,35 +83,39 @@ const AddPlantSearch = ({ onAddPlant, onToggleGlobal, showingGlobal, onFilteredP
 
   // Effect to notify parent when filters change (for map markers)
   useEffect(() => {
-    // Apply filters to all global plants
-    const filtered = globalPlants.filter(plant => {
-      // Must have coordinates
-      if (!plant.Latitude || !plant.Longitude) return false;
-      
-      // Capacity filter
-      const capacity = parseFloat(plant['Capacity (MW)']) || 0;
-      if (capacity < capacityRange[0] || capacity > capacityRange[1]) return false;
-      
-      // Country filter
-      if (selectedCountries.length > 0 && !selectedCountries.includes(plant['Country/Area'])) {
-        return false;
-      }
-      
-      // Status filter
-      if (selectedStatus !== 'all' && plant['Status']?.toLowerCase() !== selectedStatus.toLowerCase()) {
-        return false;
-      }
-      
-      return true;
-    });
-    
+    // If no filters are applied, show all deduplicated plants
+    const noFilters =
+      capacityRange[0] === minCapacity &&
+      capacityRange[1] === maxCapacity &&
+      selectedCountries.length === 0 &&
+      selectedStatus === 'all';
+
+    let filtered = globalPlants;
+    if (!noFilters) {
+      filtered = globalPlants.filter(plant => {
+        // Must have coordinates
+        if (!plant.Latitude || !plant.Longitude) return false;
+        // Capacity filter
+        const capacity = parseFloat(plant['Capacity (MW)']) || 0;
+        if (capacity < capacityRange[0] || capacity > capacityRange[1]) return false;
+        // Country filter
+        if (selectedCountries.length > 0 && !selectedCountries.includes(plant['Country/Area'])) {
+          return false;
+        }
+        // Status filter
+        if (selectedStatus !== 'all' && plant['Status']?.toLowerCase() !== selectedStatus.toLowerCase()) {
+          return false;
+        }
+        return true;
+      });
+    }
+
     // Deduplicate by plant name and coordinates, sum capacities and collect unit details
     const uniquePlants = new Map();
     const plantUnitsMap = new Map(); // Store unit details for each plant
-    
+
     filtered.forEach(plant => {
       const plantKey = `${plant['Plant name']}_${plant.Latitude}_${plant.Longitude}`;
-      
       // Store unit details
       if (!plantUnitsMap.has(plantKey)) {
         plantUnitsMap.set(plantKey, []);
@@ -120,7 +124,6 @@ const AddPlantSearch = ({ onAddPlant, onToggleGlobal, showingGlobal, onFilteredP
         unitName: plant['Unit name'],
         capacity: parseFloat(plant['Capacity (MW)']) || 0
       });
-      
       if (!uniquePlants.has(plantKey)) {
         uniquePlants.set(plantKey, plant);
       } else {
@@ -133,7 +136,7 @@ const AddPlantSearch = ({ onAddPlant, onToggleGlobal, showingGlobal, onFilteredP
         });
       }
     });
-    
+
     // Transform to standard format
     const processedPlants = Array.from(uniquePlants.values()).map(plant => {
       const plantKey = `${plant['Plant name']}_${plant.Latitude}_${plant.Longitude}`;
@@ -160,12 +163,12 @@ const AddPlantSearch = ({ onAddPlant, onToggleGlobal, showingGlobal, onFilteredP
         unitDetails: plantUnitsMap.get(plantKey) || [], // Include unit details!
       };
     });
-    
+
     // Notify parent component
     if (onFilteredPlantsChange) {
       onFilteredPlantsChange(processedPlants);
     }
-  }, [globalPlants, capacityRange, selectedCountries, selectedStatus, onFilteredPlantsChange]);
+  }, [globalPlants, capacityRange, selectedCountries, selectedStatus, onFilteredPlantsChange, minCapacity, maxCapacity]);
 
   // Separate effect for search results display
   useEffect(() => {
