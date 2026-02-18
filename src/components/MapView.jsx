@@ -371,40 +371,41 @@ const MapView = ({ userEmail }) => {
   };
   
   // Update markers when filters change and global plants are showing
-  useEffect(() => {
-    if (showAllGlobalPlants && map.current) {
-      console.log('Updating markers with filtered plants:', filteredGlobalPlants.length);
-      
-      // Remove existing global markers
-      markers.forEach(marker => {
-        const plantData = marker._element?.__plantData;
-        if (plantData?.isGlobal) {
-          marker.remove();
-        }
-      });
-      
-      const newMarkers = markers.filter(m => !m._element?.__plantData?.isGlobal);
-      setMarkers(newMarkers);
-      
-      // Add filtered markers in batches
-      if (filteredGlobalPlants.length > 0) {
-        const batchSize = 100;
-        let index = 0;
-        
-        const addBatch = () => {
-          const batch = filteredGlobalPlants.slice(index, index + batchSize);
-          batch.forEach(plant => addMarkerToMap(plant, false, true));
-          
-          index += batchSize;
-          if (index < filteredGlobalPlants.length) {
-            setTimeout(addBatch, 10);
-          }
-        };
-        
-        addBatch();
+// Update markers when filters change and global plants are showing
+useEffect(() => {
+  if (showAllGlobalPlants && map.current) {
+    console.log('Updating markers with filtered plants:', filteredGlobalPlants.length);
+
+    // Remove existing global markers
+    markers.forEach(marker => {
+      const plantData = marker._element?.__plantData;
+      if (plantData?.isGlobal) {
+        marker.remove();
       }
+    });
+
+    const newMarkers = markers.filter(m => !m._element?.__plantData?.isGlobal);
+    setMarkers(newMarkers);
+
+    // Add filtered markers in batches
+    if (filteredGlobalPlants.length > 0) {
+      const batchSize = 100;
+      let index = 0;
+
+      const addBatch = () => {
+        const batch = filteredGlobalPlants.slice(index, index + batchSize);
+        batch.forEach(plant => addMarkerToMap(plant, false, true));
+
+        index += batchSize;
+        if (index < filteredGlobalPlants.length) {
+          setTimeout(addBatch, 10);
+        }
+      };
+
+      addBatch();
     }
-  }, [filteredGlobalPlants, showAllGlobalPlants]);
+  }
+}, [filteredGlobalPlants, showAllGlobalPlants]);
 
   const loadGlobalPlants = useCallback(async (callback) => {
     console.log('loadGlobalPlants called');
