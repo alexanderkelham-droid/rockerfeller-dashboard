@@ -602,50 +602,6 @@ useEffect(() => {
     el.__plantData = plant;
     // Debug: log marker addition
     console.log(`Adding marker for plant: ${plant['Plant Name'] || plant.plant_name}, isGlobal: ${isGlobal}`);
-      useEffect(() => {
-        // Only update global markers if showAllGlobalPlants is true
-        if (showAllGlobalPlants && map.current) {
-          console.log('Updating markers with filtered plants:', filteredGlobalPlants.length);
-
-          // Remove existing global markers
-          markers.forEach(marker => {
-            const plantData = marker._element?.__plantData;
-            if (plantData?.isGlobal) {
-              marker.remove();
-            }
-          });
-
-          const newMarkers = markers.filter(m => !m._element?.__plantData?.isGlobal);
-          setMarkers(newMarkers);
-
-          // Add filtered markers in batches
-          if (filteredGlobalPlants.length > 0) {
-            const batchSize = 100;
-            let index = 0;
-
-            const addBatch = () => {
-              const batch = filteredGlobalPlants.slice(index, index + batchSize);
-              batch.forEach(plant => addMarkerToMap(plant, false, true));
-
-              index += batchSize;
-              if (index < filteredGlobalPlants.length) {
-                setTimeout(addBatch, 10);
-              }
-            };
-
-            addBatch();
-          }
-        } else if (!showAllGlobalPlants && map.current) {
-          // If hiding global plants, ensure all global markers are removed
-          markers.forEach(marker => {
-            const plantData = marker._element?.__plantData;
-            if (plantData?.isGlobal) {
-              marker.remove();
-            }
-          });
-          setMarkers(markers.filter(m => !m._element?.__plantData?.isGlobal));
-        }
-      }, [filteredGlobalPlants, showAllGlobalPlants]);
     
     // Color code by operational status
     const statusColors = {
