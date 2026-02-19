@@ -45,17 +45,17 @@ const CURRENCIES = [
 
 // Country list
 const COUNTRIES = [
-  'Afghanistan', 'Albania', 'Algeria', 'Argentina', 'Australia', 'Austria', 'Bangladesh', 'Belgium', 
-  'Bosnia and Herzegovina', 'Botswana', 'Brazil', 'Bulgaria', 'Cambodia', 'Canada', 'Chile', 'China', 
-  'Colombia', 'Croatia', 'Czech Republic', 'Denmark', 'Dominican Republic', 'Ecuador', 'Egypt', 
-  'El Salvador', 'Estonia', 'Ethiopia', 'Finland', 'France', 'Germany', 'Ghana', 'Greece', 'Guatemala', 
-  'Honduras', 'Hungary', 'India', 'Indonesia', 'Iran', 'Iraq', 'Ireland', 'Israel', 'Italy', 'Japan', 
-  'Jordan', 'Kazakhstan', 'Kenya', 'Kosovo', 'Laos', 'Latvia', 'Lebanon', 'Lithuania', 'Madagascar', 
-  'Malaysia', 'Mexico', 'Mongolia', 'Montenegro', 'Morocco', 'Mozambique', 'Myanmar', 'Nepal', 
-  'Netherlands', 'New Zealand', 'Nigeria', 'North Korea', 'North Macedonia', 'Norway', 'Pakistan', 
-  'Panama', 'Peru', 'Philippines', 'Poland', 'Portugal', 'Romania', 'Russia', 'Saudi Arabia', 'Senegal', 
-  'Serbia', 'Singapore', 'Slovakia', 'Slovenia', 'South Africa', 'South Korea', 'Spain', 'Sri Lanka', 
-  'Sweden', 'Taiwan', 'Tanzania', 'Thailand', 'Tunisia', 'Turkey', 'Ukraine', 'United Arab Emirates', 
+  'Afghanistan', 'Albania', 'Algeria', 'Argentina', 'Australia', 'Austria', 'Bangladesh', 'Belgium',
+  'Bosnia and Herzegovina', 'Botswana', 'Brazil', 'Bulgaria', 'Cambodia', 'Canada', 'Chile', 'China',
+  'Colombia', 'Croatia', 'Czech Republic', 'Denmark', 'Dominican Republic', 'Ecuador', 'Egypt',
+  'El Salvador', 'Estonia', 'Ethiopia', 'Finland', 'France', 'Germany', 'Ghana', 'Greece', 'Guatemala',
+  'Honduras', 'Hungary', 'India', 'Indonesia', 'Iran', 'Iraq', 'Ireland', 'Israel', 'Italy', 'Japan',
+  'Jordan', 'Kazakhstan', 'Kenya', 'Kosovo', 'Laos', 'Latvia', 'Lebanon', 'Lithuania', 'Madagascar',
+  'Malaysia', 'Mexico', 'Mongolia', 'Montenegro', 'Morocco', 'Mozambique', 'Myanmar', 'Nepal',
+  'Netherlands', 'New Zealand', 'Nigeria', 'North Korea', 'North Macedonia', 'Norway', 'Pakistan',
+  'Panama', 'Peru', 'Philippines', 'Poland', 'Portugal', 'Romania', 'Russia', 'Saudi Arabia', 'Senegal',
+  'Serbia', 'Singapore', 'Slovakia', 'Slovenia', 'South Africa', 'South Korea', 'Spain', 'Sri Lanka',
+  'Sweden', 'Taiwan', 'Tanzania', 'Thailand', 'Tunisia', 'Turkey', 'Ukraine', 'United Arab Emirates',
   'United Kingdom', 'United States', 'Uzbekistan', 'Venezuela', 'Vietnam', 'Zambia', 'Zimbabwe'
 ];
 
@@ -72,12 +72,12 @@ const ACTIVITY_TYPES = [
   { id: 'document', label: 'Document', icon: '📄', color: 'bg-cyan-100 text-cyan-600', description: 'Document shared or received' },
 ];
 
-const TransactionDetail = ({ 
-  transaction, 
-  onSave, 
-  onDelete, 
+const TransactionDetail = ({
+  transaction,
+  onSave,
+  onDelete,
   onClose,
-  userEmail 
+  userEmail
 }) => {
   const [formData, setFormData] = useState({
     plant_name: '',
@@ -135,7 +135,9 @@ const TransactionDetail = ({
   const [showActivityForm, setShowActivityForm] = useState(false);
   const [newActivity, setNewActivity] = useState({ type: 'note', subject: '', description: '' });
   const [activityFilter, setActivityFilter] = useState('all');
-  
+  const [uploadFile, setUploadFile] = useState(null);
+  const fileInputRef = useRef(null);
+
   // Plant search state
   const [plantSearchQuery, setPlantSearchQuery] = useState('');
   const [plantSearchResults, setPlantSearchResults] = useState([]);
@@ -158,8 +160,8 @@ const TransactionDetail = ({
       });
       setPlantSearchQuery(transaction.plant_name || '');
       try {
-        const steps = transaction.transaction_next_steps 
-          ? JSON.parse(transaction.transaction_next_steps) 
+        const steps = transaction.transaction_next_steps
+          ? JSON.parse(transaction.transaction_next_steps)
           : [];
         setNextSteps(Array.isArray(steps) ? steps : []);
       } catch {
@@ -229,7 +231,7 @@ const TransactionDetail = ({
     const startYear = parseInt(plant.start_year) || null;
     const plannedRetirement = plant.planned_retirement ? parseInt(plant.planned_retirement) : null;
     const calculatedRetirement = plannedRetirement || (startYear ? startYear + 40 : null);
-    
+
     const newPlant = {
       id: Date.now(), // temporary id for UI
       plant_name: plant.plant_name || '',
@@ -248,20 +250,20 @@ const TransactionDetail = ({
       subregion: plant.subregion || '',
       planned_retirement: calculatedRetirement || '',
     };
-    
+
     // Add to plants array and calculate aggregated values
     setFormData(prev => {
       const updatedPlants = [...(prev.plants || []), newPlant];
       const totalCapacity = calculateTotalCapacity(updatedPlants);
       const uniqueCountries = [...new Set(updatedPlants.map(p => p.country).filter(Boolean))];
-      
+
       // Calculate total annual CO2 from all plants
       const totalAnnualCO2 = updatedPlants.reduce((sum, p) => sum + (parseFloat(p.annual_co2_mt) || 0), 0);
-      
+
       // Use earliest retirement year from plants for project
       const retirementYears = updatedPlants.map(p => p.planned_retirement).filter(Boolean);
       const earliestRetirement = retirementYears.length > 0 ? Math.min(...retirementYears) : '';
-      
+
       return {
         ...prev,
         plants: updatedPlants,
@@ -272,8 +274,8 @@ const TransactionDetail = ({
         // Show all unique countries
         country: uniqueCountries.length === 1 ? uniqueCountries[0] : uniqueCountries.join(', '),
         // Use first plant's coordinates for map marker
-        location_coordinates: prev.plants?.length === 0 && plant.latitude && plant.longitude 
-          ? `${plant.latitude}, ${plant.longitude}` 
+        location_coordinates: prev.plants?.length === 0 && plant.latitude && plant.longitude
+          ? `${plant.latitude}, ${plant.longitude}`
           : prev.location_coordinates,
         // Auto-populate planned retirement year if not set
         planned_retirement_year: prev.planned_retirement_year || earliestRetirement,
@@ -295,7 +297,7 @@ const TransactionDetail = ({
       const updatedPlants = prev.plants.filter(p => p.id !== plantId);
       const totalCapacity = calculateTotalCapacity(updatedPlants);
       const uniqueCountries = [...new Set(updatedPlants.map(p => p.country).filter(Boolean))];
-      
+
       return {
         ...prev,
         plants: updatedPlants,
@@ -310,14 +312,14 @@ const TransactionDetail = ({
   // Update individual plant field
   const handlePlantFieldChange = (plantId, field, value) => {
     setFormData(prev => {
-      const updatedPlants = prev.plants.map(p => 
+      const updatedPlants = prev.plants.map(p =>
         p.id === plantId ? { ...p, [field]: value } : p
       );
-      
+
       // Recalculate totals if capacity changed
       const totalCapacity = calculateTotalCapacity(updatedPlants);
       const uniqueCountries = [...new Set(updatedPlants.map(p => p.country).filter(Boolean))];
-      
+
       return {
         ...prev,
         plants: updatedPlants,
@@ -335,7 +337,7 @@ const TransactionDetail = ({
         .select('*')
         .eq('transaction_id', transactionId)
         .order('created_at', { ascending: false });
-      
+
       if (!error && data) {
         setActivities(data);
       }
@@ -355,7 +357,7 @@ const TransactionDetail = ({
   const handleStageClick = async (stageId) => {
     const oldStage = formData.transaction_stage;
     setFormData(prev => ({ ...prev, transaction_stage: stageId }));
-    
+
     if (transaction?.id && oldStage !== stageId) {
       await addActivity({
         type: 'stage_change',
@@ -368,7 +370,7 @@ const TransactionDetail = ({
   const handleEngagementClick = async (statusId) => {
     const oldStatus = formData.engagement_status;
     setFormData(prev => ({ ...prev, engagement_status: statusId }));
-    
+
     if (transaction?.id && oldStatus !== statusId) {
       await addActivity({
         type: 'stage_change',
@@ -389,7 +391,7 @@ const TransactionDetail = ({
 
   const addActivity = async (activityData) => {
     if (!transaction?.id) return;
-    
+
     try {
       const { data, error } = await supabase
         .from('transaction_activities')
@@ -402,7 +404,7 @@ const TransactionDetail = ({
           metadata: activityData.metadata || {},
         }])
         .select();
-      
+
       if (!error && data) {
         setActivities(prev => [data[0], ...prev]);
       }
@@ -413,7 +415,7 @@ const TransactionDetail = ({
 
   const handleAddNote = async () => {
     if (!newNote.trim()) return;
-    
+
     await addActivity({
       type: 'note',
       title: 'Note Added',
@@ -423,15 +425,75 @@ const TransactionDetail = ({
   };
 
   const handleAddActivity = async () => {
-    if (!newActivity.description.trim()) return;
-    
+    if (!newActivity.description.trim() && newActivity.type !== 'document') return;
+    if (newActivity.type === 'document' && !uploadFile && !newActivity.description.trim()) return;
+
+    let metadata = {};
+    let description = newActivity.description;
+
+    // Handle file upload
+    if (newActivity.type === 'document' && uploadFile) {
+      try {
+        const fileExt = uploadFile.name.split('.').pop();
+        const fileName = `${transaction.id}/${Date.now()}_${uploadFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('project-files')
+          .upload(fileName, uploadFile);
+
+        if (uploadError) {
+          console.error('Upload error:', uploadError);
+          // Try fallback bucket if project-files doesn't exist
+          const { error: fallbackError } = await supabase.storage
+            .from('documents')
+            .upload(fileName, uploadFile);
+
+          if (fallbackError) {
+            alert('Failed to upload file. Please ensure a storage bucket named "project-files" or "documents" exists.');
+            return;
+          }
+        }
+
+        // Get public URL (try project-files first, then documents)
+        let { data: { publicUrl } } = supabase.storage
+          .from('project-files')
+          .getPublicUrl(fileName);
+
+        // If we used fallback, get url from there
+        if (!publicUrl || publicUrl.includes('undefined')) {
+          const { data: { publicUrl: fallbackUrl } } = supabase.storage
+            .from('documents')
+            .getPublicUrl(fileName);
+          publicUrl = fallbackUrl;
+        }
+
+        metadata = {
+          fileName: uploadFile.name,
+          fileSize: uploadFile.size,
+          fileType: uploadFile.type,
+          fileUrl: publicUrl
+        };
+
+        if (!description) description = `Uploaded: ${uploadFile.name}`;
+
+      } catch (error) {
+        console.error('File upload exception:', error);
+        alert('Error uplodaing file: ' + error.message);
+        return;
+      }
+    }
+
     const activityType = ACTIVITY_TYPES.find(t => t.id === newActivity.type);
     await addActivity({
       type: newActivity.type,
       title: newActivity.subject.trim() || `${activityType?.label || 'Note'}`,
-      description: newActivity.description,
+      description: description,
+      metadata: metadata,
     });
+
     setNewActivity({ type: 'note', subject: '', description: '' });
+    setUploadFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
     setShowActivityForm(false);
   };
 
@@ -443,7 +505,7 @@ const TransactionDetail = ({
   };
 
   const handleToggleNextStep = (index) => {
-    setNextSteps(prev => prev.map((step, i) => 
+    setNextSteps(prev => prev.map((step, i) =>
       i === index ? { ...step, completed: !step.completed } : step
     ));
   };
@@ -454,11 +516,11 @@ const TransactionDetail = ({
 
   const handleSubmit = async () => {
     setIsSaving(true);
-    
+
     try {
       // Remove fields that don't exist in the database yet
       const { annual_co2_mt, combustion_technology, coal_type, subregion, remaining_lifetime_years, ...restFormData } = formData;
-      
+
       const dataToSave = {
         ...restFormData,
         transaction_next_steps: JSON.stringify(nextSteps),
@@ -488,7 +550,7 @@ const TransactionDetail = ({
   };
 
   const currentStageIndex = PROJECT_STAGES.findIndex(s => s.id === formData.transaction_stage);
-  const daysActive = transaction?.created_at 
+  const daysActive = transaction?.created_at
     ? Math.floor((new Date() - new Date(transaction.created_at)) / (1000 * 60 * 60 * 24))
     : 0;
 
@@ -571,7 +633,7 @@ const TransactionDetail = ({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
           </button>
-          <button 
+          <button
             onClick={handleSubmit}
             disabled={isSaving || (!formData.plant_name && (!formData.plants || formData.plants.length === 0))}
             className="flex items-center gap-2 px-4 py-1.5 bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50"
@@ -588,7 +650,7 @@ const TransactionDetail = ({
             Refresh
           </button>
           {transaction && (
-            <button 
+            <button
               onClick={() => onDelete(transaction.id)}
               className="flex items-center gap-2 px-4 py-1.5 text-red-600 border border-red-200 rounded hover:bg-red-50"
             >
@@ -609,13 +671,13 @@ const TransactionDetail = ({
               Transaction · {formData.country || 'No country set'} · {formData.plants?.length || 0} plant(s)
             </p>
           </div>
-          
+
           {/* Key Metrics */}
           <div className="flex items-center gap-6 text-sm">
             <div className="text-center px-4 border-r border-gray-200">
               <p className="text-gray-500">Target Close Date</p>
               <p className="font-semibold text-gray-900">
-                {formData.deal_timeframe 
+                {formData.deal_timeframe
                   ? new Date(formData.deal_timeframe).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
                   : '-'}
               </p>
@@ -623,7 +685,7 @@ const TransactionDetail = ({
             <div className="text-center px-4 border-r border-gray-200">
               <p className="text-gray-500">Deal Size</p>
               <p className="font-semibold text-gray-900">
-                {formData.estimated_deal_size 
+                {formData.estimated_deal_size
                   ? `${CURRENCIES.find(c => c.code === formData.deal_currency)?.symbol || '$'}${(formData.estimated_deal_size / 1000000).toFixed(1)}M`
                   : '-'}
               </p>
@@ -656,26 +718,25 @@ const TransactionDetail = ({
               <span className="text-xs text-gray-500">Active for {daysActive} days</span>
             </div>
           </div>
-          
+
           <div className="flex items-center">
             {ENGAGEMENT_STATUSES.map((status, index) => {
               const currentEngagementIndex = ENGAGEMENT_STATUSES.findIndex(s => s.id === formData.engagement_status);
               const isActive = index === currentEngagementIndex;
               const isCompleted = index < currentEngagementIndex;
               const isLast = index === ENGAGEMENT_STATUSES.length - 1;
-              
+
               return (
                 <div key={status.id} className="flex items-center flex-1">
                   <button
                     onClick={() => handleEngagementClick(status.id)}
                     title={status.label}
-                    className={`flex-1 relative py-3 px-4 text-sm font-medium transition-colors ${
-                      isActive 
-                        ? 'bg-primary-600 text-white' 
-                        : isCompleted 
+                    className={`flex-1 relative py-3 px-4 text-sm font-medium transition-colors ${isActive
+                        ? 'bg-primary-600 text-white'
+                        : isCompleted
                           ? 'bg-primary-100 text-primary-700 hover:bg-primary-200'
                           : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                    } ${index === 0 ? 'rounded-l-lg' : ''} ${isLast ? 'rounded-r-lg' : ''}`}
+                      } ${index === 0 ? 'rounded-l-lg' : ''} ${isLast ? 'rounded-r-lg' : ''}`}
                   >
                     <div className="flex items-center justify-center gap-2">
                       {isCompleted ? (
@@ -707,11 +768,10 @@ const TransactionDetail = ({
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === tab.id
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id
                   ? 'border-primary-600 text-primary-700'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
+                }`}
             >
               {tab.label}
             </button>
@@ -736,7 +796,7 @@ const TransactionDetail = ({
                   placeholder="Enter project name..."
                 />
               </div>
-              
+
               {/* Plant Search - Multiple Plants Support */}
               <div ref={plantSearchRef} className="relative">
                 <label className="block text-xs text-gray-500 mb-1">
@@ -761,7 +821,7 @@ const TransactionDetail = ({
                     </div>
                   )}
                 </div>
-                
+
                 {/* Search Results Dropdown */}
                 {showPlantDropdown && plantSearchResults.length > 0 && (
                   <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
@@ -800,7 +860,7 @@ const TransactionDetail = ({
                           {plant.country}
                         </span>
                       </div>
-                      <button 
+                      <button
                         onClick={() => handleRemovePlant(plant.id)}
                         className="text-red-500 hover:text-red-700 p-1"
                       >
@@ -969,7 +1029,7 @@ const TransactionDetail = ({
           {activeTab === 'plant' && (
             <div className="space-y-4">
               <h3 className="font-semibold text-gray-900 border-b pb-2">Coal Plant Characteristics</h3>
-              
+
               {/* Show individual plants if any exist */}
               {formData.plants?.length > 0 ? (
                 <>
@@ -991,23 +1051,23 @@ const TransactionDetail = ({
                           Remove
                         </button>
                       </div>
-                      
+
                       <div className="space-y-3">
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="block text-xs text-gray-500 mb-1">Plant Name</label>
-                            <input 
-                              type="text" 
-                              value={plant.plant_name || ''} 
+                            <input
+                              type="text"
+                              value={plant.plant_name || ''}
                               onChange={(e) => handlePlantFieldChange(plant.id, 'plant_name', e.target.value)}
                               className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 text-sm"
                             />
                           </div>
                           <div>
                             <label className="block text-xs text-gray-500 mb-1">Unit Name</label>
-                            <input 
-                              type="text" 
-                              value={plant.unit_name || ''} 
+                            <input
+                              type="text"
+                              value={plant.unit_name || ''}
                               onChange={(e) => handlePlantFieldChange(plant.id, 'unit_name', e.target.value)}
                               className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 text-sm"
                             />
@@ -1016,27 +1076,27 @@ const TransactionDetail = ({
                         <div className="grid grid-cols-3 gap-3">
                           <div>
                             <label className="block text-xs text-gray-500 mb-1">Capacity (MW)</label>
-                            <input 
-                              type="number" 
-                              value={plant.capacity_mw || ''} 
+                            <input
+                              type="number"
+                              value={plant.capacity_mw || ''}
                               onChange={(e) => handlePlantFieldChange(plant.id, 'capacity_mw', e.target.value)}
                               className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 text-sm"
                             />
                           </div>
                           <div>
                             <label className="block text-xs text-gray-500 mb-1">Country</label>
-                            <input 
-                              type="text" 
-                              value={plant.country || ''} 
+                            <input
+                              type="text"
+                              value={plant.country || ''}
                               onChange={(e) => handlePlantFieldChange(plant.id, 'country', e.target.value)}
                               className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 text-sm"
                             />
                           </div>
                           <div>
                             <label className="block text-xs text-gray-500 mb-1">Start Year</label>
-                            <input 
-                              type="number" 
-                              value={plant.start_year || ''} 
+                            <input
+                              type="number"
+                              value={plant.start_year || ''}
                               onChange={(e) => handlePlantFieldChange(plant.id, 'start_year', e.target.value)}
                               className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 text-sm"
                             />
@@ -1045,17 +1105,17 @@ const TransactionDetail = ({
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="block text-xs text-gray-500 mb-1">Owner</label>
-                            <input 
-                              type="text" 
-                              value={plant.owner || ''} 
+                            <input
+                              type="text"
+                              value={plant.owner || ''}
                               onChange={(e) => handlePlantFieldChange(plant.id, 'owner', e.target.value)}
                               className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 text-sm"
                             />
                           </div>
                           <div>
                             <label className="block text-xs text-gray-500 mb-1">Operational Status</label>
-                            <select 
-                              value={plant.operational_status || 'operating'} 
+                            <select
+                              value={plant.operational_status || 'operating'}
                               onChange={(e) => handlePlantFieldChange(plant.id, 'operational_status', e.target.value)}
                               className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 text-sm"
                             >
@@ -1067,9 +1127,9 @@ const TransactionDetail = ({
                         </div>
                         <div>
                           <label className="block text-xs text-gray-500 mb-1">Location (Coordinates)</label>
-                          <input 
-                            type="text" 
-                            value={plant.location_coordinates || ''} 
+                          <input
+                            type="text"
+                            value={plant.location_coordinates || ''}
                             onChange={(e) => handlePlantFieldChange(plant.id, 'location_coordinates', e.target.value)}
                             placeholder="-6.123, 106.567"
                             className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500 text-sm"
@@ -1078,7 +1138,7 @@ const TransactionDetail = ({
                       </div>
                     </div>
                   ))}
-                  
+
                   {/* Combined Summary */}
                   <div className="bg-cyan-50 rounded-lg p-4 border border-cyan-200 mt-4">
                     <h4 className="font-semibold text-cyan-800 mb-3 flex items-center gap-2">
@@ -1102,7 +1162,7 @@ const TransactionDetail = ({
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* Add more plants */}
                   <div className="pt-4 border-t border-gray-200">
                     <h4 className="font-medium text-gray-700 mb-2">Add More Plants</h4>
@@ -1125,7 +1185,7 @@ const TransactionDetail = ({
                           </div>
                         )}
                       </div>
-                      
+
                       {showPlantDropdown && plantSearchResults.length > 0 && (
                         <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
                           <div className="p-2 text-xs text-gray-500 border-b border-gray-100 bg-gray-50">
@@ -1177,7 +1237,7 @@ const TransactionDetail = ({
                         </div>
                       )}
                     </div>
-                    
+
                     {showPlantDropdown && plantSearchResults.length > 0 && (
                       <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
                         <div className="p-2 text-xs text-gray-500 border-b border-gray-100 bg-gray-50">
@@ -1233,7 +1293,7 @@ const TransactionDetail = ({
                   </div>
                 </>
               )}
-              
+
               <h4 className="font-medium text-gray-700 pt-4">Lifetime Emissions</h4>
               <div className="grid grid-cols-3 gap-2">
                 <div>
@@ -1299,10 +1359,9 @@ const TransactionDetail = ({
                     onChange={handleChange}
                     className="flex-1"
                   />
-                  <span className={`text-lg font-bold min-w-[50px] text-right ${
-                    (formData.transaction_confidence_rating || 0) >= 70 ? 'text-emerald-600' :
-                    (formData.transaction_confidence_rating || 0) >= 40 ? 'text-amber-600' : 'text-red-600'
-                  }`}>
+                  <span className={`text-lg font-bold min-w-[50px] text-right ${(formData.transaction_confidence_rating || 0) >= 70 ? 'text-emerald-600' :
+                      (formData.transaction_confidence_rating || 0) >= 40 ? 'text-amber-600' : 'text-red-600'
+                    }`}>
                     {formData.transaction_confidence_rating || 0}%
                   </span>
                 </div>
@@ -1321,7 +1380,7 @@ const TransactionDetail = ({
                 <label className="block text-xs text-gray-500 mb-1">Post-Retirement Status</label>
                 <input type="text" name="planned_post_retirement_status" value={formData.planned_post_retirement_status || ''} onChange={handleChange} placeholder="e.g., Solar + Storage" className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-primary-500" />
               </div>
-              
+
               {/* Next Steps */}
               <div className="pt-4">
                 <label className="block text-xs text-gray-500 mb-2">Next Steps</label>
@@ -1387,11 +1446,10 @@ const TransactionDetail = ({
                       key={partner}
                       type="button"
                       onClick={() => handlePartnerToggle(partner)}
-                      className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-                        formData.funded_delivery_partners?.includes(partner)
+                      className={`px-3 py-1.5 text-sm rounded border transition-colors ${formData.funded_delivery_partners?.includes(partner)
                           ? 'border-primary-500 bg-primary-50 text-primary-700'
                           : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                      }`}
+                        }`}
                     >
                       {partner}
                     </button>
@@ -1426,11 +1484,10 @@ const TransactionDetail = ({
               <h3 className="font-semibold text-gray-900">Notes & Activities</h3>
               <button
                 onClick={() => setShowActivityForm(!showActivityForm)}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  showActivityForm 
-                    ? 'bg-gray-200 text-gray-700' 
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${showActivityForm
+                    ? 'bg-gray-200 text-gray-700'
                     : 'bg-primary-600 text-white hover:bg-primary-700'
-                }`}
+                  }`}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -1450,11 +1507,10 @@ const TransactionDetail = ({
                       <button
                         key={type.id}
                         onClick={() => setNewActivity(prev => ({ ...prev, type: type.id }))}
-                        className={`flex flex-col items-center p-2 rounded-lg border-2 transition-all text-xs ${
-                          newActivity.type === type.id
+                        className={`flex flex-col items-center p-2 rounded-lg border-2 transition-all text-xs ${newActivity.type === type.id
                             ? 'border-primary-500 bg-primary-50'
                             : 'border-gray-200 bg-white hover:border-gray-300'
-                        }`}
+                          }`}
                         title={type.description}
                       >
                         <span className="text-lg mb-0.5">{type.icon}</span>
@@ -1476,13 +1532,31 @@ const TransactionDetail = ({
                   />
                 </div>
 
+                {/* File Upload for Document Type */}
+                {newActivity.type === 'document' && (
+                  <div className="mb-3">
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Attachment</label>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={(e) => setUploadFile(e.target.files[0])}
+                      className="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      Upload documents related to this transaction (PDF, Docx, Images, etc.)
+                    </p>
+                  </div>
+                )}
+
                 {/* Description */}
                 <div className="mb-3">
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Details *</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    {newActivity.type === 'document' ? 'Description / Notes (optional)' : 'Details *'}
+                  </label>
                   <textarea
                     value={newActivity.description}
                     onChange={(e) => setNewActivity(prev => ({ ...prev, description: e.target.value }))}
-                    placeholder="Enter the details of the conversation, meeting notes, email summary, etc..."
+                    placeholder="Enter details..."
                     rows={4}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
                   />
@@ -1492,7 +1566,7 @@ const TransactionDetail = ({
                 <div className="flex gap-2">
                   <button
                     onClick={handleAddActivity}
-                    disabled={!newActivity.description.trim() || !transaction?.id}
+                    disabled={(!newActivity.description.trim() && !uploadFile) || !transaction?.id}
                     className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     Save Note
@@ -1500,6 +1574,9 @@ const TransactionDetail = ({
                   <button
                     onClick={() => {
                       setNewActivity({ type: 'note', subject: '', description: '' });
+                      setUploadFile(null);
+                      if (fileInputRef.current) fileInputRef.current.value = '';
+                      setShowActivityForm(false);
                       setShowActivityForm(false);
                     }}
                     className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
@@ -1514,9 +1591,8 @@ const TransactionDetail = ({
             <div className="flex gap-1 overflow-x-auto pb-1">
               <button
                 onClick={() => setActivityFilter('all')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-                  activityFilter === 'all' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${activityFilter === 'all' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
               >
                 All
               </button>
@@ -1524,9 +1600,8 @@ const TransactionDetail = ({
                 <button
                   key={type.id}
                   onClick={() => setActivityFilter(type.id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1 ${
-                    activityFilter === type.id ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1 ${activityFilter === type.id ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
                 >
                   <span>{type.icon}</span>
                   {type.label}
@@ -1566,7 +1641,7 @@ const TransactionDetail = ({
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${activityType.color}`}>
                             <span className="text-lg">{activityType.icon}</span>
                           </div>
-                          
+
                           {/* Activity Content */}
                           <div className="flex-1 min-w-0">
                             {/* Header */}
@@ -1581,12 +1656,40 @@ const TransactionDetail = ({
                                 </span>
                               </div>
                             </div>
-                            
+
                             {/* Description */}
                             {activity.description && (
                               <p className="text-sm text-gray-600 mt-2 whitespace-pre-wrap">{activity.description}</p>
                             )}
-                            
+
+                            {/* Document Attachment */}
+                            {activity.metadata?.fileUrl && (
+                              <a
+                                href={activity.metadata.fileUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-3 mt-3 p-3 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-sm group transition-all"
+                              >
+                                <div className="p-2 bg-primary-50 rounded text-primary-600 group-hover:bg-primary-100">
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium text-gray-900 truncate">{activity.metadata.fileName}</p>
+                                  <p className="text-xs text-gray-500">
+                                    {activity.metadata.fileSize ? `${Math.round(activity.metadata.fileSize / 1024)} KB` : 'Document'}
+                                    {activity.metadata.fileType ? ` • ${activity.metadata.fileType.split('/')[1]?.toUpperCase() || 'FILE'}` : ''}
+                                  </p>
+                                </div>
+                                <div className="text-gray-400 group-hover:text-primary-600">
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                  </svg>
+                                </div>
+                              </a>
+                            )}
+
                             {/* Footer - Timestamp and Author */}
                             <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
                               <span className="flex items-center gap-1">
@@ -1621,24 +1724,22 @@ const TransactionDetail = ({
         {/* Right Column - Insights */}
         <div className="w-1/3 bg-gray-50 overflow-y-auto p-6">
           <h3 className="font-semibold text-gray-900 mb-4">Insights</h3>
-          
+
           {/* Confidence Score */}
           <div className="bg-white rounded-lg p-4 mb-4 shadow-sm">
             <h4 className="text-sm text-gray-500 mb-2">Transaction Score</h4>
             <div className="flex items-end gap-3">
-              <span className={`text-4xl font-bold ${
-                (formData.transaction_confidence_rating || 0) >= 70 ? 'text-emerald-600' :
-                (formData.transaction_confidence_rating || 0) >= 40 ? 'text-amber-600' : 'text-red-600'
-              }`}>
+              <span className={`text-4xl font-bold ${(formData.transaction_confidence_rating || 0) >= 70 ? 'text-emerald-600' :
+                  (formData.transaction_confidence_rating || 0) >= 40 ? 'text-amber-600' : 'text-red-600'
+                }`}>
                 {formData.transaction_confidence_rating || 0}
               </span>
               <div className="mb-1">
-                <span className={`text-sm font-medium ${
-                  (formData.transaction_confidence_rating || 0) >= 70 ? 'text-emerald-600' :
-                  (formData.transaction_confidence_rating || 0) >= 40 ? 'text-amber-600' : 'text-red-600'
-                }`}>
+                <span className={`text-sm font-medium ${(formData.transaction_confidence_rating || 0) >= 70 ? 'text-emerald-600' :
+                    (formData.transaction_confidence_rating || 0) >= 40 ? 'text-amber-600' : 'text-red-600'
+                  }`}>
                   {(formData.transaction_confidence_rating || 0) >= 70 ? 'Grade A' :
-                   (formData.transaction_confidence_rating || 0) >= 40 ? 'Grade B' : 'Grade C'}
+                    (formData.transaction_confidence_rating || 0) >= 40 ? 'Grade B' : 'Grade C'}
                 </span>
                 <div className="flex items-center gap-1 text-xs text-gray-500">
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1663,7 +1764,7 @@ const TransactionDetail = ({
               <div className="flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full ${formData.estimated_deal_size ? 'bg-emerald-500' : 'bg-gray-300'}`} />
                 <span className="text-sm text-gray-700">
-                  {formData.estimated_deal_size 
+                  {formData.estimated_deal_size
                     ? `$${(formData.estimated_deal_size / 1000000).toFixed(1)}M deal size`
                     : 'Deal size not set'}
                 </span>
@@ -1671,7 +1772,7 @@ const TransactionDetail = ({
               <div className="flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full ${formData.deal_timeframe ? 'bg-emerald-500' : 'bg-gray-300'}`} />
                 <span className="text-sm text-gray-700">
-                  {formData.deal_timeframe 
+                  {formData.deal_timeframe
                     ? `Closes ${new Date(formData.deal_timeframe).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}`
                     : 'Close date not set'}
                 </span>
@@ -1679,7 +1780,7 @@ const TransactionDetail = ({
               <div className="flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full ${formData.funded_delivery_partners?.length > 0 ? 'bg-emerald-500' : 'bg-gray-300'}`} />
                 <span className="text-sm text-gray-700">
-                  {formData.funded_delivery_partners?.length > 0 
+                  {formData.funded_delivery_partners?.length > 0
                     ? `${formData.funded_delivery_partners.length} delivery partner(s)`
                     : 'No delivery partners'}
                 </span>

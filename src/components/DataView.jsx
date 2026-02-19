@@ -1,85 +1,103 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
-// Column configuration with display names and editability
+// Column configuration for global coal plants
 const COLUMNS = [
-  { key: 'plant_name', label: 'Plant Name', editable: false, width: '180px' },
-  { key: 'project_name', label: 'Project Name', editable: true, width: '150px' },
-  { key: 'unit_name', label: 'Unit', editable: false, width: '100px' },
-  { key: 'capacity_mw', label: 'Capacity (MW)', editable: false, width: '100px' },
-  { key: 'country', label: 'Country', editable: false, width: '120px' },
-  { key: 'operational_status', label: 'Status', editable: true, width: '120px', type: 'select', options: ['Operating', 'Retired', 'Mothballed', 'Under Construction', 'Planned'] },
-  { key: 'start_year', label: 'Start Year', editable: false, width: '90px' },
-  { key: 'planned_retirement_year', label: 'Planned Retirement', editable: true, width: '130px' },
-  { key: 'actual_retirement_year', label: 'Actual Retirement', editable: true, width: '130px' },
-  { key: 'transition_type', label: 'Transition Type', editable: true, width: '150px', type: 'select', options: ['', 'Refinance', 'Policy-driven retirement', 'Market-driven retirement', 'Conversion', 'Other'] },
-  { key: 'financial_mechanism', label: 'Financial Mechanism', editable: true, width: '150px' },
-  { key: 'lender_s_funder_s_involved', label: 'Lenders/Funders', editable: true, width: '150px' },
-  { key: 'intelligence_on_transaction_status', label: 'Transaction Intelligence', editable: true, width: '200px' },
-  { key: 'planned_post_retirement_status', label: 'Post-Retirement Status', editable: true, width: '180px' },
-  { key: 'technical_assistance_provided_to_date', label: 'Technical Assistance', editable: true, width: '180px' },
-  { key: 'information_status', label: 'Info Status', editable: true, width: '180px', type: 'select', options: ['We know of it, and have the information', 'We know of it, but info owned by others', 'Unknown'] },
-  { key: 'information_owner', label: 'Info Owner', editable: true, width: '120px' },
-  { key: 'source', label: 'Source', editable: true, width: '150px' },
-  { key: 'last_updated', label: 'Last Updated', editable: false, width: '150px' },
+  { key: 'plant_name', label: 'Plant Name', width: '200px' },
+  { key: 'unit_name', label: 'Unit', width: '100px' },
+  { key: 'country_area', label: 'Country', width: '150px' },
+  { key: 'capacity_mw', label: 'Capacity (MW)', width: '120px' },
+  { key: 'status', label: 'Status', width: '120px' },
+  { key: 'owner', label: 'Owner', width: '200px' },
+  { key: 'parent', label: 'Parent Company', width: '200px' },
+  { key: 'start_year', label: 'Start Year', width: '100px' },
+  { key: 'planned_retirement', label: 'Planned Retirement', width: '150px' },
+  { key: 'combustion_technology', label: 'Combustion Tech', width: '150px' },
+  { key: 'coal_type', label: 'Coal Type', width: '150px' },
+  { key: 'region', label: 'Region', width: '150px' },
+  { key: 'subregion', label: 'Subregion', width: '150px' },
+  { key: 'latitude', label: 'Latitude', width: '100px' },
+  { key: 'longitude', label: 'Longitude', width: '100px' },
 ];
 
-const DataView = ({ userEmail }) => {
+const normalizeGlobalPlant = (row) => ({
+  ...row,
+  'Country/Area': row.country_area,
+  'Plant name': row.plant_name,
+  'Unit name': row.unit_name,
+  'Capacity (MW)': row.capacity_mw,
+  'Status': row.status,
+  'Start year': row.start_year,
+  'Planned retirement': row.planned_retirement,
+  'Combustion technology': row.combustion_technology,
+  'Coal type': row.coal_type,
+  'Subregion': row.subregion,
+  'Region': row.region,
+  'Captive': row.captive,
+  'Remaining plant lifetime (years)': row.remaining_plant_lifetime_years,
+  'Latitude': row.latitude,
+  'Longitude': row.longitude,
+});
+
+const DataView = () => {
   const [data, setData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [editingCell, setEditingCell] = useState(null);
-  const [editValue, setEditValue] = useState('');
-  const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: 'plant_name', direction: 'asc' });
-  const [visibleColumns, setVisibleColumns] = useState(
-    COLUMNS.slice(0, 10).map(c => c.key) // Show first 10 columns by default
-  );
-  const [showColumnPicker, setShowColumnPicker] = useState(false);
+  const [visibleColumns, setVisibleColumns] = useState(COLUMNS.map(c => c.key));
+  const [currentPage, setCurrentPage] = useState(1);
+  const rowsPerPage = 50;
 
-  // Drag-to-scroll functionality
-  const tableContainerRef = useRef(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [startX, setStartX] = useState(0);
-  const [scrollLeft, setScrollLeft] = useState(0);
+  // Filter states
+  const [showFilters, setShowFilters] = useState(true);
+  const [capacityRange, setCapacityRange] = useState([0, 5000]);
+  const [selectedCountries, setSelectedCountries] = useState([]);
+  const [minCapacity, setMinCapacity] = useState(0);
+  const [maxCapacity, setMaxCapacity] = useState(5000);
+  const [selectedCombustionTech, setSelectedCombustionTech] = useState([]);
+  const [selectedCoalTypes, setSelectedCoalTypes] = useState([]);
+  const [selectedSubregions, setSelectedSubregions] = useState([]);
+  const [captiveFilter, setCaptiveFilter] = useState('all');
+  const [maxRemainingLifetime, setMaxRemainingLifetime] = useState(null);
 
-  const handleMouseDown = (e) => {
-    if (!tableContainerRef.current) return;
-    setIsDragging(true);
-    setStartX(e.pageX - tableContainerRef.current.offsetLeft);
-    setScrollLeft(tableContainerRef.current.scrollLeft);
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
-
-  const handleMouseMove = (e) => {
-    if (!isDragging || !tableContainerRef.current) return;
-    e.preventDefault();
-    const x = e.pageX - tableContainerRef.current.offsetLeft;
-    const walk = (x - startX) * 1.5; // Scroll speed multiplier
-    tableContainerRef.current.scrollLeft = scrollLeft - walk;
-  };
-
-  const handleMouseLeave = () => {
-    setIsDragging(false);
-  };
-
-  // Fetch data from Supabase
+  // Fetch data
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const { data: projects, error } = await supabase
-        .from('project_specific_data')
-        .select('*')
-        .order('plant_name', { ascending: true });
+      let allData = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
 
-      if (error) throw error;
-      setData(projects || []);
+      while (hasMore) {
+        const { data: batch, error } = await supabase
+          .from('global_coal_plants')
+          .select('*')
+          .eq('status', 'operating')
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (error) throw error;
+        if (batch && batch.length > 0) {
+          allData = allData.concat(batch);
+          page++;
+          hasMore = batch.length === pageSize;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      const normalized = allData.map(normalizeGlobalPlant);
+      const capacities = normalized.map(p => parseFloat(p['Capacity (MW)']) || 0).filter(c => c > 0);
+      const actualMin = Math.min(...capacities);
+      const actualMax = Math.max(...capacities);
+
+      setMinCapacity(actualMin);
+      setMaxCapacity(actualMax);
+      setCapacityRange([actualMin, actualMax]);
+      setData(normalized);
     } catch (err) {
-      console.error('Error fetching data:', err);
+      console.error('Error fetching global coal plant data:', err);
       setError(err.message);
     }
     setIsLoading(false);
@@ -89,394 +107,339 @@ const DataView = ({ userEmail }) => {
     fetchData();
   }, [fetchData]);
 
-  // Handle cell edit start
-  const handleCellClick = (rowId, columnKey, currentValue) => {
-    const column = COLUMNS.find(c => c.key === columnKey);
-    if (!column?.editable) return;
-    
-    setEditingCell({ rowId, columnKey });
-    setEditValue(currentValue || '');
-  };
+  // Derive unique filter options
+  const uniqueCountries = useMemo(() => [...new Set(data.map(p => p['Country/Area']).filter(Boolean))].sort(), [data]);
+  const uniqueCombustionTechs = useMemo(() => [...new Set(data.map(p => p['Combustion technology']).filter(Boolean))].sort(), [data]);
+  const uniqueCoalTypes = useMemo(() => [...new Set(data.map(p => p['Coal type']).filter(Boolean))].sort(), [data]);
+  const uniqueSubregions = useMemo(() => [...new Set(data.map(p => p['Subregion']).filter(Boolean))].sort(), [data]);
 
-  // Handle save edit
-  const handleSaveEdit = async () => {
-    if (!editingCell) return;
+  // Apply filters
+  const filteredData = useMemo(() => {
+    return data.filter(plant => {
+      const capacity = parseFloat(plant['Capacity (MW)']) || 0;
+      if (capacity < capacityRange[0] || capacity > capacityRange[1]) return false;
 
-    const { rowId, columnKey } = editingCell;
-    const row = data.find(r => r.id === rowId);
-    const oldValue = row?.[columnKey] || '';
-    
-    if (oldValue === editValue) {
-      setEditingCell(null);
-      return;
-    }
+      if (selectedCountries.length > 0 && !selectedCountries.includes(plant['Country/Area'])) return false;
+      if (selectedCombustionTech.length > 0 && !selectedCombustionTech.includes(plant['Combustion technology'])) return false;
+      if (selectedCoalTypes.length > 0 && !selectedCoalTypes.includes(plant['Coal type'])) return false;
+      if (selectedSubregions.length > 0 && !selectedSubregions.includes(plant['Subregion'])) return false;
 
-    setSaving(true);
-    try {
-      // Update in Supabase
-      const { error: updateError } = await supabase
-        .from('project_specific_data')
-        .update({ 
-          [columnKey]: editValue,
-          last_updated: new Date().toISOString()
-        })
-        .eq('id', rowId);
+      if (captiveFilter !== 'all') {
+        const isCaptive = (plant['Captive'] || '').toLowerCase();
+        if (captiveFilter === 'yes' && isCaptive !== 'yes') return false;
+        if (captiveFilter === 'no' && isCaptive === 'yes') return false;
+      }
 
-      if (updateError) throw updateError;
+      if (maxRemainingLifetime !== null) {
+        const lifetime = parseFloat(plant['Remaining plant lifetime (years)']);
+        if (isNaN(lifetime) || lifetime > maxRemainingLifetime) return false;
+      }
 
-      // Log the change
-      await supabase
-        .from('project_logs')
-        .insert({
-          project_id: rowId,
-          plant_name: row?.plant_name || '',
-          field_changed: COLUMNS.find(c => c.key === columnKey)?.label || columnKey,
-          old_value: oldValue,
-          new_value: editValue,
-          updated_by: userEmail || 'user',
-        });
+      // Search term
+      if (searchTerm) {
+        const lowerSearch = searchTerm.toLowerCase();
+        return COLUMNS.some(col => String(plant[col.key] || '').toLowerCase().includes(lowerSearch));
+      }
 
-      // Update local state
-      setData(prev => prev.map(r => 
-        r.id === rowId 
-          ? { ...r, [columnKey]: editValue, last_updated: new Date().toISOString() }
-          : r
-      ));
-
-      setEditingCell(null);
-      setEditValue('');
-    } catch (err) {
-      console.error('Error saving:', err);
-      alert('Error saving: ' + err.message);
-    }
-    setSaving(false);
-  };
-
-  // Handle cancel edit
-  const handleCancelEdit = () => {
-    setEditingCell(null);
-    setEditValue('');
-  };
-
-  // Handle key press
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter') {
-      handleSaveEdit();
-    } else if (e.key === 'Escape') {
-      handleCancelEdit();
-    }
-  };
-
-  // Handle sort
-  const handleSort = (key) => {
-    setSortConfig(prev => ({
-      key,
-      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
-    }));
-  };
-
-  // Toggle column visibility
-  const toggleColumn = (key) => {
-    setVisibleColumns(prev => 
-      prev.includes(key) 
-        ? prev.filter(k => k !== key)
-        : [...prev, key]
-    );
-  };
-
-  // Filter and sort data
-  const filteredData = data
-    .filter(row => {
-      if (!searchTerm) return true;
-      const search = searchTerm.toLowerCase();
-      return (
-        row.plant_name?.toLowerCase().includes(search) ||
-        row.project_name?.toLowerCase().includes(search) ||
-        row.country?.toLowerCase().includes(search) ||
-        row.operational_status?.toLowerCase().includes(search)
-      );
-    })
-    .sort((a, b) => {
-      const aVal = a[sortConfig.key] || '';
-      const bVal = b[sortConfig.key] || '';
-      const direction = sortConfig.direction === 'asc' ? 1 : -1;
-      return aVal.toString().localeCompare(bVal.toString()) * direction;
+      return true;
     });
+  }, [data, capacityRange, selectedCountries, selectedCombustionTech, selectedCoalTypes, selectedSubregions, captiveFilter, maxRemainingLifetime, searchTerm]);
 
-  // Export to CSV
-  const handleExport = () => {
-    const headers = visibleColumns.map(key => COLUMNS.find(c => c.key === key)?.label || key);
-    const rows = filteredData.map(row => 
-      visibleColumns.map(key => `"${(row[key] || '').toString().replace(/"/g, '""')}"`)
-    );
-    
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `project_data_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
+  // Apply sorting
+  const processedData = useMemo(() => {
+    return [...filteredData].sort((a, b) => {
+      // Map the sort key to the normalized data key if different
+      // But here we used snake_case for sort keys in COLUMNS and mapped them.
+      // Wait, COLUMNS uses snake_case keys (e.g. 'plant_name'), but normalizeGlobalPlant uses readable keys (e.g. 'Plant name').
+      // I need to map the sort key back to the readable key or normalized key.
+      // Let's check COLUMNS vs normalized keys.
+      // COLUMNS: plant_name, unit_name, country_area, capacity_mw, status...
+      // Normalized: 'Plant name', 'Unit name', 'Country/Area', 'Capacity (MW)', 'Status'...
+
+      // I'll create a mapping helper or just update COLUMNS to use the normalized keys directly!
+      // Updating COLUMNS is cleaner. But let's check what I used in sort logic.
+
+      // Let's map COLUMNS to the keys I actually put in `normalizeGlobalPlant`.
+      const keyMap = {
+        'plant_name': 'Plant name',
+        'unit_name': 'Unit name',
+        'country_area': 'Country/Area',
+        'capacity_mw': 'Capacity (MW)',
+        'status': 'Status',
+        'owner': 'Owner',
+        'parent': 'Parent',
+        'start_year': 'Start year',
+        'planned_retirement': 'Planned retirement',
+        'combustion_technology': 'Combustion technology',
+        'coal_type': 'Coal type',
+        'region': 'Region',
+        'subregion': 'Subregion',
+        'latitude': 'Latitude',
+        'longitude': 'Longitude',
+      };
+
+      const sortKey = keyMap[sortConfig.key] || sortConfig.key;
+      const aVal = a[sortKey];
+      const bVal = b[sortKey];
+
+      if (aVal === bVal) return 0;
+
+      const aNum = parseFloat(aVal);
+      const bNum = parseFloat(bVal);
+      if (!isNaN(aNum) && !isNaN(bNum)) {
+        return sortConfig.direction === 'asc' ? aNum - bNum : bNum - aNum;
+      }
+
+      const aStr = String(aVal || '').toLowerCase();
+      const bStr = String(bVal || '').toLowerCase();
+      return sortConfig.direction === 'asc' ? (aStr < bStr ? -1 : 1) : (aStr > bStr ? -1 : 1);
+    });
+  }, [filteredData, sortConfig]);
+
+  // Helpers for filters
+  const CheckboxList = ({ items, selected, onToggle, maxHeight = '150px' }) => (
+    <div style={{ maxHeight }} className="overflow-y-auto border border-gray-200 rounded-md p-2 bg-white space-y-0.5">
+      {items.map(item => (
+        <label key={item} className="flex items-center space-x-2 text-xs cursor-pointer hover:bg-gray-50 px-1 py-0.5 rounded">
+          <input
+            type="checkbox"
+            checked={selected.includes(item)}
+            onChange={() => onToggle(item)}
+            className="rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+          />
+          <span className="flex-1 truncate text-gray-700">{item}</span>
+        </label>
+      ))}
+    </div>
+  );
+
+  const clearFilters = () => {
+    setCapacityRange([minCapacity, maxCapacity]);
+    setSelectedCountries([]);
+    setSelectedCombustionTech([]);
+    setSelectedCoalTypes([]);
+    setSelectedSubregions([]);
+    setCaptiveFilter('all');
+    setMaxRemainingLifetime(null);
+    setSearchTerm('');
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 mx-auto mb-4"></div>
-          <p className="text-gray-500">Loading project data...</p>
-        </div>
-      </div>
-    );
-  }
+  const handleExport = () => {
+    const keyMap = {
+      'plant_name': 'Plant name',
+      'unit_name': 'Unit name',
+      'country_area': 'Country/Area',
+      'capacity_mw': 'Capacity (MW)',
+      'status': 'Status',
+      'owner': 'Owner',
+      'parent': 'Parent',
+      'start_year': 'Start year',
+      'planned_retirement': 'Planned retirement',
+      'combustion_technology': 'Combustion technology',
+      'coal_type': 'Coal type',
+      'region': 'Region',
+      'subregion': 'Subregion',
+      'latitude': 'Latitude',
+      'longitude': 'Longitude',
+    };
 
-  if (error) {
-    return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-6 m-4">
-        <p className="text-red-600">Error loading data: {error}</p>
-        <button 
-          onClick={fetchData}
-          className="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
+    const headers = visibleColumns.map(key => COLUMNS.find(c => c.key === key)?.label || key).join(',');
+    const rows = processedData.map(row =>
+      visibleColumns.map(key => {
+        const val = row[keyMap[key] || key];
+        const strVal = String(val === null || val === undefined ? '' : val);
+        if (strVal.includes(',') || strVal.includes('"') || strVal.includes('\n')) {
+          return `"${strVal.replace(/"/g, '""')}"`;
+        }
+        return strVal;
+      }).join(',')
+    ).join('\n');
+
+    const csvContent = `${headers}\n${rows}`;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `global_coal_plants_export_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const paginatedData = processedData.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
+  const totalPages = Math.ceil(processedData.length / rowsPerPage);
+
+  if (isLoading) return <div className="flex items-center justify-center h-full"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div></div>;
+  if (error) return <div className="p-8 text-center text-red-500">Error loading data: {error}</div>;
 
   return (
-    <div className="h-full flex flex-col bg-gray-50">
-      {/* Header / Toolbar */}
-      <div className="bg-white border-b border-gray-200 px-8 py-5">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          {/* Search */}
-          <div className="relative flex-1 max-w-md">
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search plants, projects, countries..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-            />
-            <svg className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
+    <div className="flex h-full bg-secondary-50 overflow-hidden">
+      {/* Sidebar Filters */}
+      <div className={`flex-shrink-0 bg-white border-r border-secondary-200 transition-all duration-300 flex flex-col ${showFilters ? 'w-80' : 'w-0 overflow-hidden'}`}>
+        <div className="p-4 border-b border-secondary-200 bg-gray-50 flex items-center justify-between">
+          <h2 className="font-semibold text-gray-800">Filters</h2>
+          <button onClick={clearFilters} className="text-xs text-blue-600 hover:text-blue-800 font-medium underline">Clear all</button>
+        </div>
+
+        <div className="p-4 overflow-y-auto flex-1 space-y-6">
+          {/* Capacity Range */}
+          <div>
+            <label className="text-xs font-semibold text-gray-700 mb-2 block">Capacity Range (MW)</label>
+            <div className="flex items-center gap-2 mb-1">
+              <input type="number" min={minCapacity} max={capacityRange[1]} value={Math.round(capacityRange[0])} onChange={(e) => setCapacityRange([parseFloat(e.target.value), capacityRange[1]])} className="w-20 px-1 py-1 text-xs border border-gray-300 rounded-md" />
+              <span className="text-xs text-gray-500">to</span>
+              <input type="number" min={capacityRange[0]} max={maxCapacity} value={Math.round(capacityRange[1])} onChange={(e) => setCapacityRange([capacityRange[0], parseFloat(e.target.value)])} className="w-20 px-1 py-1 text-xs border border-gray-300 rounded-md" />
+            </div>
           </div>
 
-          {/* Actions */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">
-              {filteredData.length} project{filteredData.length !== 1 ? 's' : ''}
-            </span>
-            
-            {/* Column Picker */}
-            <div className="relative">
-              <button
-                onClick={() => setShowColumnPicker(!showColumnPicker)}
-                className="px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center gap-2"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-                </svg>
-                Columns
+          {/* Remaining Plant Lifetime */}
+          <div>
+            <label className="text-xs font-semibold text-gray-700 mb-1 block">Max Remaining Lifetime (years)</label>
+            <div className="flex items-center gap-2">
+              <input type="range" min={0} max={60} step={5} value={maxRemainingLifetime ?? 60} onChange={(e) => { const val = parseInt(e.target.value); setMaxRemainingLifetime(val === 60 ? null : val); }} className="flex-1 h-2 accent-blue-500" />
+              <span className="text-xs text-gray-500 w-12 text-right">{maxRemainingLifetime === null ? 'Any' : `<= ${maxRemainingLifetime}y`}</span>
+            </div>
+          </div>
+
+          {/* Combustion Tech */}
+          {uniqueCombustionTechs.length > 0 && (
+            <div>
+              <label className="text-xs font-semibold text-gray-700 mb-1 block">Combustion Technology</label>
+              <CheckboxList items={uniqueCombustionTechs} selected={selectedCombustionTech} onToggle={(t) => setSelectedCombustionTech(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])} />
+            </div>
+          )}
+
+          {/* Coal Type */}
+          {uniqueCoalTypes.length > 0 && (
+            <div>
+              <label className="text-xs font-semibold text-gray-700 mb-1 block">Coal Type</label>
+              <CheckboxList items={uniqueCoalTypes} selected={selectedCoalTypes} onToggle={(t) => setSelectedCoalTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])} />
+            </div>
+          )}
+
+          {/* Subregion */}
+          {uniqueSubregions.length > 0 && (
+            <div>
+              <label className="text-xs font-semibold text-gray-700 mb-1 block">Subregion</label>
+              <CheckboxList items={uniqueSubregions} selected={selectedSubregions} onToggle={(t) => setSelectedSubregions(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])} />
+            </div>
+          )}
+
+          {/* Captive */}
+          <div>
+            <label className="text-xs font-semibold text-gray-700 mb-1 block">Captive Plant</label>
+            <div className="flex gap-2">
+              {['all', 'yes', 'no'].map(opt => (
+                <button key={opt} onClick={() => setCaptiveFilter(opt)} className={`flex-1 py-1 text-xs rounded-md font-medium transition-colors ${captiveFilter === opt ? 'bg-blue-500 text-white' : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+                  {opt === 'all' ? 'All' : opt === 'yes' ? 'Captive only' : 'Non-captive'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Country */}
+          <div>
+            <label className="text-xs font-semibold text-gray-700 mb-1 block">Countries</label>
+            <CheckboxList items={uniqueCountries} selected={selectedCountries} onToggle={(c) => setSelectedCountries(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])} />
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="p-6 pb-2">
+          <div className="flex justify-between items-center mb-4">
+            <div className="flex items-center gap-4">
+              <button onClick={() => setShowFilters(!showFilters)} className="px-3 py-2 bg-white border border-secondary-300 rounded-lg hover:bg-secondary-50 text-secondary-700 font-medium flex items-center gap-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
+                {showFilters ? 'Hide Filters' : 'Show Filters'}
               </button>
-              
-              {showColumnPicker && (
-                <div className="absolute right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-xl z-50 w-64 max-h-96 overflow-y-auto">
-                  <div className="p-3 border-b border-gray-100 sticky top-0 bg-white">
-                    <p className="text-xs font-semibold text-gray-500 uppercase">Show/Hide Columns</p>
-                  </div>
-                  <div className="p-2">
-                    {COLUMNS.map(col => (
-                      <label key={col.key} className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={visibleColumns.includes(col.key)}
-                          onChange={() => toggleColumn(col.key)}
-                          className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                        />
-                        <span className="text-sm text-gray-700">{col.label}</span>
-                        {col.editable && <span className="text-xs text-emerald-600">✎</span>}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <div>
+                <h1 className="text-2xl font-bold text-secondary-900">Global Coal Plant Database</h1>
+                <p className="text-secondary-500 text-sm">{processedData.length.toLocaleString()} plants found</p>
+              </div>
+            </div>
+            <div className="flex space-x-4">
+              <div className="relative">
+                <input type="text" placeholder="Search..." value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} className="pl-10 pr-4 py-2 border border-secondary-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 w-64" />
+                <svg className="w-5 h-5 text-secondary-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+              </div>
+              <button onClick={handleExport} className="flex items-center px-4 py-2 bg-white border border-secondary-300 rounded-lg hover:bg-secondary-50 text-secondary-700 font-medium">
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                Export CSV
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Table */}
+        <div className="flex-1 px-6 pb-6 overflow-hidden flex flex-col">
+          <div className="bg-white rounded-lg shadow border border-secondary-200 overflow-hidden flex flex-col flex-1">
+            <div className="overflow-auto flex-1">
+              <table className="min-w-full divide-y divide-secondary-200">
+                <thead className="bg-secondary-50 sticky top-0 z-10">
+                  <tr>
+                    {visibleColumns.map(key => {
+                      const column = COLUMNS.find(c => c.key === key);
+                      return (
+                        <th key={key} style={{ width: column.width, minWidth: column.width }} className="px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase tracking-wider cursor-pointer hover:bg-secondary-100" onClick={() => setSortConfig({ key, direction: sortConfig.key === key && sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>
+                          <div className="flex items-center space-x-1">
+                            <span>{column.label}</span>
+                            {sortConfig.key === key && <span>{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>}
+                          </div>
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-secondary-200">
+                  {paginatedData.map((row, idx) => {
+                    // Need to map consistent keys from normalized data
+                    const keyMap = {
+                      'plant_name': 'Plant name',
+                      'unit_name': 'Unit name',
+                      'country_area': 'Country/Area',
+                      'capacity_mw': 'Capacity (MW)',
+                      'status': 'Status',
+                      'owner': 'Owner',
+                      'parent': 'Parent',
+                      'start_year': 'Start year',
+                      'planned_retirement': 'Planned retirement',
+                      'combustion_technology': 'Combustion technology',
+                      'coal_type': 'Coal type',
+                      'region': 'Region',
+                      'subregion': 'Subregion',
+                      'latitude': 'Latitude',
+                      'longitude': 'Longitude',
+                    };
+                    return (
+                      <tr key={`${row['GEM location ID']}-${idx}`} className="hover:bg-secondary-50">
+                        {visibleColumns.map(key => (
+                          <td key={key} className="px-6 py-4 whitespace-nowrap text-sm text-secondary-900 truncate max-w-xs" title={row[keyMap[key] || key]}>
+                            {row[keyMap[key] || key]}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                  {paginatedData.length === 0 && <tr><td colSpan={visibleColumns.length} className="px-6 py-12 text-center text-secondary-500">No plants found matching your search.</td></tr>}
+                </tbody>
+              </table>
             </div>
 
-            <button
-              onClick={handleExport}
-              className="px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              Export
-            </button>
-
-            <button
-              onClick={fetchData}
-              className="px-3 py-2 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Refresh
-            </button>
+            {/* Pagination */}
+            <div className="bg-white border-t border-secondary-200 px-4 py-3 flex items-center justify-between sm:px-6 flex-shrink-0">
+              <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                <p className="text-sm text-secondary-700">Showing <span className="font-medium">{Math.min((currentPage - 1) * rowsPerPage + 1, processedData.length)}</span> to <span className="font-medium">{Math.min(currentPage * rowsPerPage, processedData.length)}</span> of <span className="font-medium">{processedData.length}</span> results</p>
+                <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                  <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className={`relative inline-flex items-center px-2 py-2 rounded-l-md border border-secondary-300 bg-white text-sm font-medium ${currentPage === 1 ? 'text-secondary-300 cursor-not-allowed' : 'text-secondary-500 hover:bg-secondary-50'}`}>←</button>
+                  <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className={`relative inline-flex items-center px-2 py-2 rounded-r-md border border-secondary-300 bg-white text-sm font-medium ${currentPage === totalPages ? 'text-secondary-300 cursor-not-allowed' : 'text-secondary-500 hover:bg-secondary-50'}`}>→</button>
+                </nav>
+              </div>
+            </div>
           </div>
         </div>
-        
-        <p className="text-xs text-gray-500 mt-2">
-          💡 Click on editable cells (marked with ✎ in column picker) to edit. Changes are saved automatically to the database.
-        </p>
       </div>
-
-      {/* Table */}
-      <div className="flex-1 overflow-auto p-6">
-        <div 
-          ref={tableContainerRef}
-          className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto ${isDragging ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
-          onMouseDown={handleMouseDown}
-          onMouseUp={handleMouseUp}
-          onMouseMove={handleMouseMove}
-          onMouseLeave={handleMouseLeave}
-        >
-        <table className="w-full border-collapse">
-          <thead className="bg-gray-50 sticky top-0 z-10">
-            <tr>
-              {COLUMNS.filter(col => visibleColumns.includes(col.key)).map(col => (
-                <th
-                  key={col.key}
-                  onClick={() => handleSort(col.key)}
-                  className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200 cursor-pointer hover:bg-gray-100 select-none whitespace-nowrap"
-                  style={{ minWidth: col.width }}
-                >
-                  <div className="flex items-center gap-1">
-                    {col.label}
-                    {col.editable && <span className="text-emerald-600">✎</span>}
-                    {sortConfig.key === col.key && (
-                      <span className="text-emerald-600">
-                        {sortConfig.direction === 'asc' ? '↑' : '↓'}
-                      </span>
-                    )}
-                  </div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-100">
-            {filteredData.map((row, rowIndex) => (
-              <tr 
-                key={row.id} 
-                className={`hover:bg-emerald-50/30 transition-colors ${rowIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}
-              >
-                {COLUMNS.filter(col => visibleColumns.includes(col.key)).map(col => {
-                  const isEditing = editingCell?.rowId === row.id && editingCell?.columnKey === col.key;
-                  const value = row[col.key] || '';
-                  
-                  return (
-                    <td
-                      key={col.key}
-                      onClick={() => handleCellClick(row.id, col.key, value)}
-                      className={`px-6 py-4 text-sm ${
-                        col.editable 
-                          ? 'cursor-pointer hover:bg-emerald-100/40' 
-                          : ''
-                      } ${isEditing ? 'bg-emerald-100' : ''}`}
-                      style={{ minWidth: col.width }}
-                    >
-                      {isEditing ? (
-                        col.type === 'select' ? (
-                          <select
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={handleSaveEdit}
-                            onKeyDown={handleKeyDown}
-                            autoFocus
-                            className="w-full px-2 py-1 border-2 border-emerald-500 rounded focus:outline-none text-sm"
-                          >
-                            {col.options?.map(opt => (
-                              <option key={opt} value={opt}>{opt || '(None)'}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            type="text"
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={handleSaveEdit}
-                            onKeyDown={handleKeyDown}
-                            autoFocus
-                            className="w-full px-2 py-1 border-2 border-emerald-500 rounded focus:outline-none text-sm"
-                          />
-                        )
-                      ) : (
-                        <div className="flex items-center gap-1">
-                          {col.key === 'operational_status' ? (
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
-                              value === 'Operating' ? 'bg-green-100 text-green-700 ring-1 ring-inset ring-green-600/20' :
-                              value === 'Retired' ? 'bg-orange-100 text-orange-700 ring-1 ring-inset ring-orange-600/20' :
-                              value === 'Mothballed' ? 'bg-yellow-100 text-yellow-700 ring-1 ring-inset ring-yellow-600/20' :
-                              value === 'Under Construction' ? 'bg-blue-100 text-blue-700 ring-1 ring-inset ring-blue-600/20' :
-                              value === 'Planned' ? 'bg-purple-100 text-purple-700 ring-1 ring-inset ring-purple-600/20' :
-                              'bg-gray-100 text-gray-600 ring-1 ring-inset ring-gray-500/20'
-                            }`}>
-                              {value || '-'}
-                            </span>
-                          ) : col.key === 'last_updated' && value ? (
-                            <span className="text-gray-500 text-xs">
-                              {new Date(value).toLocaleDateString('en-GB', { 
-                                day: '2-digit', 
-                                month: 'short', 
-                                year: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </span>
-                          ) : col.key === 'source' && value ? (
-                            <a 
-                              href={value} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="text-emerald-600 hover:text-emerald-800 underline truncate max-w-[140px]"
-                            >
-                              {value}
-                            </a>
-                          ) : (
-                            <span className={`${col.key === 'plant_name' ? 'font-semibold text-gray-900' : 'text-gray-700'} ${!value ? 'text-gray-400' : ''}`}>
-                              {value || '-'}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {filteredData.length === 0 && (
-          <div className="text-center py-16 text-gray-500">
-            <svg className="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <p className="text-lg font-medium">No projects found</p>
-            {searchTerm && <p className="text-sm mt-2 text-gray-400">Try a different search term</p>}
-          </div>
-        )}
-        </div>
-      </div>
-
-      {/* Saving indicator */}
-      {saving && (
-        <div className="fixed bottom-4 right-4 bg-emerald-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2">
-          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-          Saving...
-        </div>
-      )}
     </div>
   );
 };

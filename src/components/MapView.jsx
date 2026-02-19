@@ -64,6 +64,7 @@ const MapView = ({ userEmail }) => {
   const [previousView, setPreviousView] = useState(null); // Store previous map view
   const [markers, setMarkers] = useState([]); // Store marker references
   const [showAllGlobalPlants, setShowAllGlobalPlants] = useState(false);
+  const showAllGlobalPlantsRef = useRef(false); // Ref so useEffect can read the intended value synchronously
   const [globalPlants, setGlobalPlants] = useState([]);
   const [filteredGlobalPlants, setFilteredGlobalPlants] = useState([]);
   const [panelHeight, setPanelHeight] = useState(35); // Panel height in vh (35% of viewport height)
@@ -82,7 +83,7 @@ const MapView = ({ userEmail }) => {
   const radialMarkersRef = useRef([]); // Store radial transaction markers and lines
   const radialLinesRef = useRef([]); // Store SVG line elements
   const moveHandlerRef = useRef(null); // Store map move handler for cleanup
-  
+
   // Popup drag state
   const [popupPosition, setPopupPosition] = useState({ x: null, y: null }); // null means use default centered position
   const [isPopupDragging, setIsPopupDragging] = useState(false);
@@ -226,7 +227,7 @@ const MapView = ({ userEmail }) => {
     const { data: projectData, error: projectError } = await supabase
       .from('project_specific_data')
       .select('*');
-    
+
     if (!projectError && projectData) {
       const normalizedProjects = projectData.map(normalizeProjectData);
       const processedData = normalizedProjects.map(row => {
@@ -239,7 +240,7 @@ const MapView = ({ userEmail }) => {
           'Operational Status': row['Operational Status'] || 'Unknown',
         };
       }).filter(row => row.latitude && row.longitude);
-      
+
       setMapData(processedData);
     }
   };
@@ -339,7 +340,7 @@ const MapView = ({ userEmail }) => {
 
         // Parse coordinates (format: "lat, lon")
         const [lat, lon] = coords.split(',').map(c => parseFloat(c.trim()));
-        
+
         if (isNaN(lat) || isNaN(lon)) return null;
 
         return {
@@ -358,7 +359,7 @@ const MapView = ({ userEmail }) => {
     // Add the new plant to the map data
     const updatedData = [...mapData, newPlant];
     setMapData(updatedData);
-    
+
     // Fly to the plant location
     if (map.current) {
       map.current.flyTo({
@@ -369,11 +370,13 @@ const MapView = ({ userEmail }) => {
       });
     }
   };
-  
-  // Update markers when filters change and global plants are showing
-// Update markers when filters change and global plants are showing
-useEffect(() => {
-  if (showAllGlobalPlants && map.current) {
+
+  // Update markers when filters change — only runs when global plants are actively shown
+  useEffect(() => {
+    // Only update map markers if the user has explicitly toggled global plants ON
+    // Use the ref (not state) so we get the synchronously-updated value, not the stale render value
+    if (!showAllGlobalPlantsRef.current || !map.current) return;
+
     console.log('Updating markers with filtered plants:', filteredGlobalPlants.length);
 
     // Remove existing global markers
@@ -395,167 +398,30 @@ useEffect(() => {
       const addBatch = () => {
         const batch = filteredGlobalPlants.slice(index, index + batchSize);
         batch.forEach(plant => addMarkerToMap(plant, false, true));
-
         index += batchSize;
         if (index < filteredGlobalPlants.length) {
           setTimeout(addBatch, 10);
         }
+        // NOTE: Do NOT re-add project/triangle markers here — they are managed separately
+        // and are already rendered as plant-node-marker elements with higher z-index.
       };
 
       addBatch();
     }
-  }
-}, [filteredGlobalPlants, showAllGlobalPlants]);
+  }, [filteredGlobalPlants, showAllGlobalPlants]);
 
-  const loadGlobalPlants = useCallback(async (callback) => {
-    console.log('loadGlobalPlants called');
-    try {
-      // Fetch all operating plants from the database (paginated)
-      let allData = [];
-      let page = 0;
-      const pageSize = 1000;
-      let hasMore = true;
-      
-      while (hasMore) {
-        const { data, error } = await supabase
-          .from('global_coal_plants')
-          .select('*')
-          .eq('status', 'operating')
-          .range(page * pageSize, (page + 1) * pageSize - 1);
-
-        if (error) throw error;
-
-        if (data && data.length > 0) {
-          allData = allData.concat(data);
-          page++;
-          hasMore = data.length === pageSize;
-        } else {
-          hasMore = false;
-        }
-      }
-
-      console.log(`Global plants query returned ${allData.length} total operating plants`);
-      // Debug: print a few Turkey and India plants
-      const debugTurkey = allData.filter(p => (p.country_area || p.Country || '').toLowerCase().includes('turkey'));
-      const debugIndia = allData.filter(p => (p.country_area || p.Country || '').toLowerCase().includes('india'));
-      console.log('Sample Turkey plants:', debugTurkey.slice(0, 5));
-      console.log('Sample India plants:', debugIndia.slice(0, 5));
-
-      // Group by unique plant (not by unit) and store unit details
-      const uniquePlants = new Map();
-      const plantUnitsMap = new Map(); // Store unit details for each plant
-
-      let skippedNoCoords = 0;
-
-      allData.forEach(plant => {
-        // Debug: log plant if it's Turkey or India
-        if ((plant.country_area || plant.Country || '').toLowerCase().includes('turkey') || (plant.country_area || plant.Country || '').toLowerCase().includes('india')) {
-          console.log('Checking plant for deduplication:', plant.plant_name, plant.latitude, plant.longitude);
-        }
-        if (!plant.latitude || !plant.longitude) {
-          skippedNoCoords++;
-          // Debug: log skipped plant
-          if ((plant.country_area || plant.Country || '').toLowerCase().includes('turkey') || (plant.country_area || plant.Country || '').toLowerCase().includes('india')) {
-            console.warn('Skipped plant due to missing coordinates:', plant.plant_name, plant.latitude, plant.longitude);
-          }
-          return;
-        }
-
-        const plantKey = `${plant.plant_name}_${plant.latitude}_${plant.longitude}`;
-
-        // Store unit details
-        if (!plantUnitsMap.has(plantKey)) {
-          plantUnitsMap.set(plantKey, []);
-        }
-        plantUnitsMap.get(plantKey).push({
-          unitName: plant.unit_name,
-          capacity: parseFloat(plant.capacity_mw) || 0
-        });
-
-        // If we haven't seen this plant yet, or if this unit has higher capacity, use it
-        if (!uniquePlants.has(plantKey)) {
-          uniquePlants.set(plantKey, { ...plant, unitDetails: [] });
-        } else {
-          const existing = uniquePlants.get(plantKey);
-          const currentCapacity = parseFloat(plant.capacity_mw) || 0;
-          const existingCapacity = parseFloat(existing.capacity_mw) || 0;
-          // Sum up capacities for the same plant
-          uniquePlants.set(plantKey, {
-            ...existing,
-            capacity_mw: existingCapacity + currentCapacity,
-          });
-        }
-      });
-
-      console.log(`Skipped ${skippedNoCoords} plants with no coordinates`);
-      // Debug: print deduped Turkey/India plants
-      const dedupedTurkey = Array.from(uniquePlants.values()).filter(p => (p.country_area || p.Country || '').toLowerCase().includes('turkey'));
-      const dedupedIndia = Array.from(uniquePlants.values()).filter(p => (p.country_area || p.Country || '').toLowerCase().includes('india'));
-      console.log('Deduped Turkey plants:', dedupedTurkey.slice(0, 5));
-      console.log('Deduped India plants:', dedupedIndia.slice(0, 5));
-
-      // Attach unit details to each plant
-      uniquePlants.forEach((plant, key) => {
-        plant.unitDetails = plantUnitsMap.get(key) || [];
-      });
-
-      // Convert to array and process
-      const processedGlobal = Array.from(uniquePlants.values()).map(plant => ({
-        'No': `GLOBAL-${plant.gem_location_id || Math.random()}`,
-        'Plant Name': plant.plant_name || 'Unknown',
-        'Unit name': 'Combined Units',
-        'Capacity (MW)': plant.capacity_mw || 0,
-        'Country': plant.country_area || '',
-        'Operational Status': 'Operating',
-        'Start year': plant.start_year || '',
-        'Planned retirement year': plant.planned_retirement || '',
-        'Location (coordinates)': `${plant.latitude}, ${plant.longitude}`,
-        'Operator': plant.owner || '',
-        'Owner': plant.owner || '',
-        'Parent': plant.parent || '',
-        'Transition type': '',
-        'Financial mechanism': '',
-        'Information Status': 'Global Database',
-        'Email extension': '',
-        latitude: parseFloat(plant.latitude),
-        longitude: parseFloat(plant.longitude),
-        isGlobal: true,
-        unitDetails: plant.unitDetails || [], // Include unit details!
-      }));
-
-      console.log(`Loaded ${processedGlobal.length} unique plants from global database`);
-      setGlobalPlants(processedGlobal);
-      if (callback) callback(processedGlobal);
-    } catch (error) {
-      console.error('Error loading global plants:', error);
-    }
-  }, [impactResults]);
 
   const toggleGlobalPlants = () => {
-    console.log('toggleGlobalPlants called. showAllGlobalPlants:', showAllGlobalPlants);
-    if (!showAllGlobalPlants) {
-      // Always reload from Supabase for fresh data
-      console.log('Forcing reload of global plants from Supabase...');
-      removeAllGlobalMarkers(); // Remove any previously loaded global markers (including the initial 363)
-      loadGlobalPlants((plants) => {
-        // Add markers in batches to prevent UI blocking
-        const batchSize = 100;
-        let index = 0;
-        const addBatch = () => {
-          const batch = plants.slice(index, index + batchSize);
-          batch.forEach(plant => addMarkerToMap(plant, false, true));
-          index += batchSize;
-          if (index < plants.length) {
-            setTimeout(addBatch, 10); // Small delay between batches
-          }
-        };
-        addBatch();
-      });
-    } else {
-      // Hide global plants - remove their markers
+    const nextValue = !showAllGlobalPlants;
+    // Update ref synchronously so the filteredGlobalPlants useEffect sees the correct value
+    showAllGlobalPlantsRef.current = nextValue;
+    if (!nextValue) {
+      // Turning OFF — remove all global markers immediately
       removeAllGlobalMarkers();
     }
-    setShowAllGlobalPlants(!showAllGlobalPlants);
+    // Turning ON — the filteredGlobalPlants useEffect will fire and add markers
+    // (AddPlantSearch already has the data loaded; no need to re-fetch)
+    setShowAllGlobalPlants(nextValue);
   };
 
   const removeAllGlobalMarkers = () => {
@@ -576,7 +442,7 @@ useEffect(() => {
     el.className = 'custom-marker';
 
     if (isGlobal) {
-      // Global plants: keep as circles
+      // Global plants: circles rendered behind project markers
       const size = '16px';
       el.style.width = size;
       el.style.height = size;
@@ -584,9 +450,10 @@ useEffect(() => {
       el.style.position = 'absolute';
       el.style.transform = 'translate(-50%, -50%)';
       el.style.opacity = '0.5';
-      el.style.zIndex = '10'; // Lower z-index for global markers
+      // Low z-index so global dots sit behind project node markers
+      el.style.zIndex = '1';
     } else {
-      // Project plants: make triangles
+      // Project plants: triangles (legacy — now superseded by plant-node-marker circles)
       el.style.width = '0';
       el.style.height = '0';
       el.style.borderLeft = '15px solid transparent';
@@ -595,14 +462,11 @@ useEffect(() => {
       el.style.position = 'absolute';
       el.style.transform = 'translate(-50%, -50%)';
       el.style.opacity = '1';
-      el.style.zIndex = '20'; // Higher z-index for project markers
+      el.style.zIndex = '20';
     }
 
     // Store plant data on element for filtering
     el.__plantData = plant;
-    // Debug: log marker addition
-    console.log(`Adding marker for plant: ${plant['Plant Name'] || plant.plant_name}, isGlobal: ${isGlobal}`);
-    
     // Color code by operational status
     const statusColors = {
       'Operating': '#10b981',
@@ -611,7 +475,7 @@ useEffect(() => {
       'Planning': '#3b82f6',
     };
     const baseColor = statusColors[plant['Operational Status']] || '#6b7280';
-    
+
     if (isGlobal) {
       el.style.backgroundColor = baseColor;
       el.style.border = '1px solid white';
@@ -620,7 +484,7 @@ useEffect(() => {
       el.style.borderBottomColor = baseColor;
       el.style.filter = isNewlyAdded ? 'drop-shadow(0 0 4px #3b82f6)' : 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))';
     }
-    
+
     el.style.cursor = 'pointer';
 
     // Only add hover for non-global or simplified hover for global
@@ -653,6 +517,12 @@ useEffect(() => {
       .setLngLat([plant.longitude, plant.latitude])
       .addTo(map.current);
 
+    // Set z-index on the MapLibre marker container so DOM stacking is correct:
+    // global dots (1) sit behind project node markers (30)
+    if (marker.getElement) {
+      marker.getElement().style.zIndex = isGlobal ? '1' : '20';
+    }
+
     // Store reference for later removal
     marker._element = el;
 
@@ -664,11 +534,11 @@ useEffect(() => {
         const currentCenter = map.current.getCenter();
         const currentZoom = map.current.getZoom();
         setPreviousView({ center: [currentCenter.lng, currentCenter.lat], zoom: currentZoom });
-        
+
         setSelectedPlant(plant);
         setSelectedPlantProjects([]);
         setSelectedUnit('all'); // Reset to show all units
-        
+
         map.current.flyTo({
           center: [plant.longitude, plant.latitude],
           zoom: 10,
@@ -680,14 +550,14 @@ useEffect(() => {
         const currentCenter = map.current.getCenter();
         const currentZoom = map.current.getZoom();
         setPreviousView({ center: [currentCenter.lng, currentCenter.lat], zoom: currentZoom });
-        
+
         const plantName = plant['Plant Name'];
         const allProjects = mapData.filter(p => p['Plant Name'] === plantName);
-        
+
         console.log(`Found ${allProjects.length} projects for ${plantName}`);
         setSelectedPlantProjects(allProjects);
         setSelectedPlant(plant);
-        
+
         // Zoom to plant
         map.current.flyTo({
           center: [plant.longitude, plant.latitude],
@@ -720,11 +590,11 @@ useEffect(() => {
   const getPlantGroups = (txns) => {
     const groups = {};
     const portfolioConnections = []; // Store connections between plants in same portfolio
-    
+
     txns.forEach(t => {
       const plants = t.plants || [];
       const plantsWithCoords = [];
-      
+
       // If transaction has plants array with coordinates, use those
       if (plants.length > 0) {
         plants.forEach(plant => {
@@ -736,10 +606,10 @@ useEffect(() => {
             lat = parseFloat(plant.latitude);
             lng = parseFloat(plant.longitude);
           }
-          
+
           if (!isNaN(lat) && !isNaN(lng)) {
             plantsWithCoords.push({ plant, lat, lng });
-            
+
             // Use plant_name + coords as grouping key
             const key = `${(plant.plant_name || '').toLowerCase().trim()}_${lat.toFixed(3)}_${lng.toFixed(3)}`;
             if (!groups[key]) {
@@ -757,7 +627,7 @@ useEffect(() => {
             });
           }
         });
-        
+
         // If portfolio has multiple plants with coords, create connections
         if (plantsWithCoords.length > 1) {
           portfolioConnections.push({
@@ -773,7 +643,7 @@ useEffect(() => {
         if (!coords) return;
         const [lat, lng] = coords.split(',').map(s => parseFloat(s?.trim()));
         if (isNaN(lat) || isNaN(lng)) return;
-        
+
         const key = `${(t.plant_name || t.project_name || '').toLowerCase().trim()}_${lat.toFixed(3)}_${lng.toFixed(3)}`;
         if (!groups[key]) {
           groups[key] = {
@@ -786,17 +656,17 @@ useEffect(() => {
         groups[key].transactions.push(t);
       }
     });
-    
+
     return { groups, portfolioConnections };
   };
 
   // Add coal plant node for a group of transactions
   const addPlantNode = (group) => {
     if (!map.current) return;
-    
+
     const { key, plantName, lat, lng, transactions: groupTxns } = group;
     const count = groupTxns.length;
-    
+
     // Determine dominant status color for the ring
     const statusCounts = {};
     groupTxns.forEach(t => {
@@ -810,7 +680,9 @@ useEffect(() => {
     const wrapper = document.createElement('div');
     wrapper.className = 'plant-node-marker';
     wrapper.style.cursor = 'pointer';
-    
+    // Ensure plant-node-markers always sit above global plant dots
+    wrapper.style.zIndex = '30';
+
     // Build a compact, professional node
     const size = count === 1 ? 38 : 44;
     const el = document.createElement('div');
@@ -825,7 +697,7 @@ useEffect(() => {
     el.style.justifyContent = 'center';
     el.style.transition = 'transform 0.15s ease, box-shadow 0.15s ease';
     el.style.position = 'relative';
-    
+
     // Count or icon
     if (count === 1) {
       // Single transaction — show a small power icon
@@ -840,7 +712,7 @@ useEffect(() => {
         letter-spacing: -0.02em;
       ">${count}</span>`;
     }
-    
+
     // Multi-status ring segments (tiny colored dots around the ring for multiple statuses)
     if (count > 1) {
       groupTxns.forEach((txn, i) => {
@@ -854,13 +726,13 @@ useEffect(() => {
         el.appendChild(dot);
       });
     }
-    
+
     wrapper.appendChild(el);
-    
+
     // Name label below the node
     const label = document.createElement('div');
     label.style.cssText = `
-      position:absolute;top:${size/2 + 6}px;left:50%;transform:translateX(-50%);
+      position:absolute;top:${size / 2 + 6}px;left:50%;transform:translateX(-50%);
       white-space:nowrap;font-size:10px;font-weight:600;color:#1e293b;
       background:rgba(255,255,255,0.92);padding:1px 6px;border-radius:3px;
       box-shadow:0 1px 3px rgba(0,0,0,0.15);pointer-events:none;
@@ -869,10 +741,10 @@ useEffect(() => {
     `;
     label.textContent = plantName;
     wrapper.appendChild(label);
-    
+
     // Tooltip
     wrapper.title = `${plantName} — ${count} transaction${count !== 1 ? 's' : ''}`;
-    
+
     // Hover
     wrapper.addEventListener('mouseenter', () => {
       el.style.transform = 'scale(1.12)';
@@ -897,7 +769,7 @@ useEffect(() => {
     // Click handler — expand/collapse radial
     wrapper.addEventListener('click', (e) => {
       e.stopPropagation();
-      
+
       if (expandedPlantKeyRef.current === key) {
         // Collapse
         clearRadialMarkers();
@@ -909,7 +781,7 @@ useEffect(() => {
         label.style.display = '';
         return;
       }
-      
+
       // Collapse any previously expanded
       clearRadialMarkers();
       document.querySelectorAll('.plant-node-marker').forEach(node => {
@@ -920,7 +792,7 @@ useEffect(() => {
         const lbl = node.querySelector('div[style*="position:absolute"]') || node.lastElementChild;
         if (lbl && lbl !== inner) lbl.style.display = '';
       });
-      
+
       // Highlight this node
       expandedPlantKeyRef.current = key;
       setExpandedPlantKey(key);
@@ -928,7 +800,7 @@ useEffect(() => {
       el.style.border = `3px solid #f8fafc`;
       el.style.background = '#334155';
       label.style.display = 'none'; // Hide label when expanded to reduce clutter
-      
+
       // Create SVG overlay for lines
       const container = map.current.getContainer();
       let svg = document.getElementById('radial-lines-svg');
@@ -939,19 +811,19 @@ useEffect(() => {
         container.appendChild(svg);
       }
       svg.innerHTML = '';
-      
+
       // Calculate radial positions
       const centerPoint = map.current.project([lng, lat]);
       const baseRadius = count === 1 ? 60 : 55 + (count * 14);
       const radius = Math.min(baseRadius, 160); // cap it
-      
+
       groupTxns.forEach((txn, i) => {
         const angle = count === 1 ? -Math.PI / 2 : (2 * Math.PI * i) / count - Math.PI / 2;
         const tx = centerPoint.x + radius * Math.cos(angle);
         const ty = centerPoint.y + radius * Math.sin(angle);
-        
+
         const statusColor = TRANSACTION_STATUS_COLORS[txn.transaction_status] || TRANSACTION_STATUS_COLORS.default;
-        
+
         // Subtle line from center to node
         const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         line.setAttribute('x1', centerPoint.x);
@@ -962,14 +834,14 @@ useEffect(() => {
         line.setAttribute('stroke-width', '1.5');
         line.setAttribute('stroke-opacity', '0.35');
         svg.appendChild(line);
-        
+
         // Animate line to target
         requestAnimationFrame(() => {
           line.style.transition = 'all 0.3s ease';
           line.setAttribute('x2', tx);
           line.setAttribute('y2', ty);
         });
-        
+
         // Transaction card (not just a circle — a mini pill)
         const txnEl = document.createElement('div');
         txnEl.style.cssText = `
@@ -983,22 +855,22 @@ useEffect(() => {
           white-space:nowrap;max-width:200px;
           position:relative;z-index:15;
         `;
-        
+
         // Status dot
         const dot = document.createElement('div');
         dot.style.cssText = `width:22px;height:22px;border-radius:50%;background:${statusColor};flex-shrink:0;display:flex;align-items:center;justify-content:center;`;
         const statusInitial = (txn.transaction_status || '?')[0].toUpperCase();
         dot.innerHTML = `<span style="font-size:10px;font-weight:700;color:#fff;pointer-events:none;">${statusInitial}</span>`;
         txnEl.appendChild(dot);
-        
+
         // Project name text
         const nameSpan = document.createElement('span');
         nameSpan.style.cssText = 'font-size:11px;font-weight:500;color:#334155;overflow:hidden;text-overflow:ellipsis;pointer-events:none;';
         nameSpan.textContent = txn.project_name || txn.plant_name || 'Transaction';
         txnEl.appendChild(nameSpan);
-        
+
         txnEl.title = `${txn.project_name || 'Transaction'} — ${txn.transaction_status || 'No status'}`;
-        
+
         // Hover
         txnEl.addEventListener('mouseenter', () => {
           txnEl.style.transform = 'scale(1.06)';
@@ -1008,17 +880,17 @@ useEffect(() => {
           txnEl.style.transform = 'scale(1)';
           txnEl.style.boxShadow = '0 2px 10px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.05)';
         });
-        
+
         // Click — show transaction popup
         txnEl.addEventListener('click', (ev) => {
           ev.stopPropagation();
-          
+
           const currentCenter = map.current.getCenter();
           const currentZoom = map.current.getZoom();
           setPreviousView({ center: [currentCenter.lng, currentCenter.lat], zoom: currentZoom });
-          
+
           const [tLat, tLng] = txn.location_coordinates.split(',').map(s => parseFloat(s?.trim()));
-          
+
           const plantData = {
             'Plant Name': txn.plant_name || txn.project_name,
             'Country': txn.country,
@@ -1031,7 +903,7 @@ useEffect(() => {
             isTransaction: true,
             transactionData: txn,
           };
-          
+
           setSelectedPlant(plantData);
           setSelectedPlantProjects([]);
           setSelectedUnit('all');
@@ -1043,13 +915,13 @@ useEffect(() => {
         txnWrapper.style.cssText = `position:absolute;left:${tx}px;top:${ty}px;transform:translate(-50%,-50%);z-index:15;`;
         txnWrapper.appendChild(txnEl);
         container.appendChild(txnWrapper);
-        
+
         // Staggered animate in
         setTimeout(() => {
           txnEl.style.opacity = '1';
           txnEl.style.transform = 'scale(1)';
         }, 40 + i * 50);
-        
+
         radialMarkersRef.current.push(txnWrapper);
       });
 
@@ -1057,19 +929,19 @@ useEffect(() => {
       const updatePositions = () => {
         const newCenter = map.current.project([lng, lat]);
         const svgEl = document.getElementById('radial-lines-svg');
-        
+
         groupTxns.forEach((txn, i) => {
           const angle = (2 * Math.PI * i) / count - Math.PI / 2;
           const newTx = newCenter.x + radius * Math.cos(angle);
           const newTy = newCenter.y + radius * Math.sin(angle);
-          
+
           // Update wrapper position
           const wrapper = radialMarkersRef.current[i];
           if (wrapper) {
             wrapper.style.left = `${newTx}px`;
             wrapper.style.top = `${newTy}px`;
           }
-          
+
           // Update line
           if (svgEl && svgEl.children[i]) {
             svgEl.children[i].setAttribute('x1', newCenter.x);
@@ -1079,7 +951,7 @@ useEffect(() => {
           }
         });
       };
-      
+
       moveHandlerRef.current = updatePositions;
       map.current.on('move', updatePositions);
       map.current.on('zoom', updatePositions);
@@ -1094,7 +966,7 @@ useEffect(() => {
   // Draw portfolio connection lines on map
   const drawPortfolioConnections = (connections) => {
     if (!map.current) return;
-    
+
     // Clear existing portfolio lines
     portfolioLinesRef.current.forEach(line => {
       if (line.layerId && map.current.getLayer(line.layerId)) {
@@ -1105,23 +977,23 @@ useEffect(() => {
       }
     });
     portfolioLinesRef.current = [];
-    
+
     connections.forEach((conn, idx) => {
       if (conn.plants.length < 2) return;
-      
+
       const statusColor = TRANSACTION_STATUS_COLORS[conn.status] || TRANSACTION_STATUS_COLORS.default;
-      
+
       // Create line coordinates connecting all plants in this portfolio
       const coordinates = conn.plants.map(p => [p.lng, p.lat]);
-      
+
       // For more than 2 plants, connect them in sequence and close the loop
       if (coordinates.length > 2) {
         coordinates.push(coordinates[0]); // Close the loop
       }
-      
+
       const sourceId = `portfolio-line-source-${idx}`;
       const layerId = `portfolio-line-layer-${idx}`;
-      
+
       // Add line source
       map.current.addSource(sourceId, {
         type: 'geojson',
@@ -1137,7 +1009,7 @@ useEffect(() => {
           },
         },
       });
-      
+
       // Add line layer with dashed style
       map.current.addLayer({
         id: layerId,
@@ -1154,7 +1026,7 @@ useEffect(() => {
           'line-dasharray': [4, 4],
         },
       });
-      
+
       portfolioLinesRef.current.push({ sourceId, layerId });
     });
   };
@@ -1162,12 +1034,12 @@ useEffect(() => {
   // Add transaction markers grouped by plant location
   const addTransactionMarkers = () => {
     if (!map.current || transactions.length === 0) return;
-    
+
     const { groups, portfolioConnections } = getPlantGroups(transactions);
     Object.values(groups).forEach(group => {
       addPlantNode(group);
     });
-    
+
     // Draw lines connecting plants in the same portfolio
     if (portfolioConnections.length > 0) {
       drawPortfolioConnections(portfolioConnections);
@@ -1200,7 +1072,7 @@ useEffect(() => {
       if (transactions.length > 0) {
         const bounds = new maplibregl.LngLatBounds();
         let hasValidBounds = false;
-        
+
         transactions.forEach(t => {
           // Check plants array first for portfolio transactions
           const plants = t.plants || [];
@@ -1227,7 +1099,7 @@ useEffect(() => {
             }
           }
         });
-        
+
         if (hasValidBounds) {
           map.current.fitBounds(bounds, { padding: 50, maxZoom: 6 });
         }
@@ -1258,82 +1130,82 @@ useEffect(() => {
   return (
     <div className="relative w-full h-[calc(100vh-64px)]">
       <div ref={mapContainer} className="w-full h-full" />
-      
+
       {/* Add Plant Search */}
-      <AddPlantSearch 
-        onAddPlant={handleAddPlant} 
+      <AddPlantSearch
+        onAddPlant={handleAddPlant}
         onToggleGlobal={toggleGlobalPlants}
         showingGlobal={showAllGlobalPlants}
         onFilteredPlantsChange={setFilteredGlobalPlants}
         impactResults={impactResults}
       />
-      
+
 
       {/* Selected plant details panel - positioned near the marker (for global plants only) */}
       {selectedPlant && selectedPlant.isGlobal && (() => {
         // Find impact results for this plant
-        const plantImpacts = impactResults.filter(result => 
+        const plantImpacts = impactResults.filter(result =>
           result['Unique plant name']?.toLowerCase() === selectedPlant['Plant Name']?.toLowerCase() ||
           result['GEM Unique ID'] === selectedPlant['No']?.replace('GLOBAL-', '')
         );
-        
+
         // Get the capacity to display based on selected unit
         const displayCapacity = selectedUnit === 'all'
           ? selectedPlant['Capacity (MW)']
           : (() => {
-              // Look up unit capacity from unitDetails (loaded from global_coal_plants.xlsx)
-              const unitDetail = selectedPlant.unitDetails?.find(u => u.unitName === selectedUnit);
-              
-              // If not found, it means this unit exists in impact results but not in global xlsx
-              // In this case, just show the average capacity per unit
-              if (!unitDetail && selectedPlant.unitDetails && selectedPlant.unitDetails.length > 0) {
-                // Calculate average unit capacity as fallback
-                const avgCapacity = selectedPlant['Capacity (MW)'] / plantImpacts.length;
-                return Math.round(avgCapacity);
-              }
-              
-              return unitDetail?.capacity || selectedPlant['Capacity (MW)'];
-            })();
-        
+            // Look up unit capacity from unitDetails (loaded from global_coal_plants.xlsx)
+            const unitDetail = selectedPlant.unitDetails?.find(u => u.unitName === selectedUnit);
+
+            // If not found, it means this unit exists in impact results but not in global xlsx
+            // In this case, just show the average capacity per unit
+            if (!unitDetail && selectedPlant.unitDetails && selectedPlant.unitDetails.length > 0) {
+              // Calculate average unit capacity as fallback
+              const avgCapacity = selectedPlant['Capacity (MW)'] / plantImpacts.length;
+              return Math.round(avgCapacity);
+            }
+
+            return unitDetail?.capacity || selectedPlant['Capacity (MW)'];
+          })();
+
         // Get the impact data to display (either specific unit or aggregated)
-        const displayImpact = selectedUnit === 'all' 
+        const displayImpact = selectedUnit === 'all'
           ? plantImpacts.reduce((acc, impact) => {
-              return {
-                unitName: `All Units (${plantImpacts.length})`,
-                co2: acc.co2 + (parseFloat(impact['Total avoided CO2 emissions (Mt)']) || 0),
-                deaths: acc.deaths + (parseInt(impact['Total avoided deaths']?.replace(/,/g, '')) || 0),
-                wlds: acc.wlds + (parseInt(impact['Total avoided Work Loss Days (WLDs)']?.replace(/,/g, '')) || 0),
-                investment: acc.investment + (parseFloat(impact['Total investment (mn. USD)']?.replace(/[$,]/g, '')) || 0),
-                spillover: acc.spillover + (parseFloat(impact['Economic spillover (mn. USD)']?.replace(/[$,]/g, '')) || 0),
-                permJobs: acc.permJobs + (parseInt(impact['Net permanent jobs created']?.replace(/,/g, '')) || 0),
-                tempJobs: acc.tempJobs + (parseInt(impact['Total temporary jobs created']?.replace(/,/g, '')) || 0),
-                savings: acc.savings + (parseFloat(impact['Annual customer savings (mn USD)']?.replace(/[$,]/g, '')) || 0),
-                savingsPercent: plantImpacts.length > 0 
-                  ? (plantImpacts.reduce((sum, i) => sum + (parseFloat(i['Savings per kWh (%)']?.replace(/%/g, '')) || 0), 0) / plantImpacts.length).toFixed(0)
-                  : null,
-              };
-            }, { co2: 0, deaths: 0, wlds: 0, investment: 0, spillover: 0, permJobs: 0, tempJobs: 0, savings: 0 })
+            return {
+              unitName: `All Units (${plantImpacts.length})`,
+              co2: acc.co2 + (parseFloat(impact['Total avoided CO2 emissions (Mt)']) || 0),
+              deaths: acc.deaths + (parseInt(impact['Total avoided deaths']?.replace(/,/g, '')) || 0),
+              wlds: acc.wlds + (parseInt(impact['Total avoided Work Loss Days (WLDs)']?.replace(/,/g, '')) || 0),
+              investment: acc.investment + (parseFloat(impact['Total investment (mn. USD)']?.replace(/[$,]/g, '')) || 0),
+              spillover: acc.spillover + (parseFloat(impact['Economic spillover (mn. USD)']?.replace(/[$,]/g, '')) || 0),
+              permJobs: acc.permJobs + (parseInt(impact['Net permanent jobs created']?.replace(/,/g, '')) || 0),
+              tempJobs: acc.tempJobs + (parseInt(impact['Total temporary jobs created']?.replace(/,/g, '')) || 0),
+              savings: acc.savings + (parseFloat(impact['Annual customer savings (mn USD)']?.replace(/[$,]/g, '')) || 0),
+              savingsPercent: plantImpacts.length > 0
+                ? (plantImpacts.reduce((sum, i) => sum + (parseFloat(i['Savings per kWh (%)']?.replace(/%/g, '')) || 0), 0) / plantImpacts.length).toFixed(0)
+                : null,
+            };
+          }, { co2: 0, deaths: 0, wlds: 0, investment: 0, spillover: 0, permJobs: 0, tempJobs: 0, savings: 0 })
           : (() => {
-              const unitData = plantImpacts.find(impact => impact['Unit name'] === selectedUnit);
-              if (!unitData) return null;
-              return {
-                unitName: unitData['Unit name'],
-                co2: parseFloat(unitData['Total avoided CO2 emissions (Mt)']) || 0,
-                deaths: parseInt(unitData['Total avoided deaths']?.replace(/,/g, '')) || 0,
-                wlds: parseInt(unitData['Total avoided Work Loss Days (WLDs)']?.replace(/,/g, '')) || 0,
-                investment: parseFloat(unitData['Total investment (mn. USD)']?.replace(/[$,]/g, '')) || 0,
-                spillover: parseFloat(unitData['Economic spillover (mn. USD)']?.replace(/[$,]/g, '')) || 0,
-                permJobs: parseInt(unitData['Net permanent jobs created']?.replace(/,/g, '')) || 0,
-                tempJobs: parseInt(unitData['Total temporary jobs created']?.replace(/,/g, '')) || 0,
-                savings: parseFloat(unitData['Annual customer savings (mn USD)']?.replace(/[$,]/g, '')) || 0,
-                savingsPercent: parseFloat(unitData['Savings per kWh (%)']?.replace(/%/g, '')) || null,
-              };
-            })();
-        
+            const unitData = plantImpacts.find(impact => impact['Unit name'] === selectedUnit);
+            if (!unitData) return null;
+            return {
+              unitName: unitData['Unit name'],
+              co2: parseFloat(unitData['Total avoided CO2 emissions (Mt)']) || 0,
+              deaths: parseInt(unitData['Total avoided deaths']?.replace(/,/g, '')) || 0,
+              wlds: parseInt(unitData['Total avoided Work Loss Days (WLDs)']?.replace(/,/g, '')) || 0,
+              investment: parseFloat(unitData['Total investment (mn. USD)']?.replace(/[$,]/g, '')) || 0,
+              spillover: parseFloat(unitData['Economic spillover (mn. USD)']?.replace(/[$,]/g, '')) || 0,
+              permJobs: parseInt(unitData['Net permanent jobs created']?.replace(/,/g, '')) || 0,
+              tempJobs: parseInt(unitData['Total temporary jobs created']?.replace(/,/g, '')) || 0,
+              savings: parseFloat(unitData['Annual customer savings (mn USD)']?.replace(/[$,]/g, '')) || 0,
+              savingsPercent: parseFloat(unitData['Savings per kWh (%)']?.replace(/%/g, '')) || null,
+            };
+          })();
+
         return (
-          <div 
-            className="fixed bg-gradient-to-br from-white to-cyan-50/30 rounded-xl shadow-2xl border border-cyan-100/50 backdrop-blur-sm z-[100] max-h-[80vh] overflow-hidden" 
-            style={{ 
+          <div
+            className="fixed bg-gradient-to-br from-white to-cyan-50/30 rounded-xl shadow-2xl border border-cyan-100/50 backdrop-blur-sm z-[100] max-h-[80vh] overflow-hidden"
+            style={{
               width: '640px',
               top: popupPosition.y !== null ? `calc(80px + ${popupPosition.y}px)` : '80px',
               left: popupPosition.x !== null ? `calc(50% + ${popupPosition.x}px)` : '50%',
@@ -1341,14 +1213,14 @@ useEffect(() => {
             }}
           >
             {/* Draggable Header Bar */}
-            <div 
+            <div
               onMouseDown={handlePopupDragStart}
               onTouchStart={handlePopupDragStart}
               className="flex items-center justify-center py-1.5 cursor-move hover:bg-cyan-50/50 transition-colors rounded-t-xl border-b border-cyan-100/30"
             >
               <div className="w-10 h-1 bg-gray-300 rounded-full"></div>
             </div>
-            
+
             {/* Close button */}
             <button
               onClick={() => {
@@ -1370,37 +1242,35 @@ useEffect(() => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
-            
+
             {/* Header Section */}
             <div className="px-8 pt-4 pb-6 border-b border-cyan-100/50">
               <h3 className="text-2xl font-semibold text-gray-800 mb-1 pr-8">{selectedPlant['Plant Name']}</h3>
               <p className="text-sm text-gray-500">{selectedPlant['Country']}</p>
-              
+
               {/* Tabs */}
               <div className="flex space-x-4 mt-4">
                 <button
                   onClick={() => setSelectedPopupTab('transaction')}
-                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                    selectedPopupTab === 'transaction'
-                      ? 'bg-cyan-100 text-cyan-700'
-                      : 'text-gray-500 hover:bg-gray-100'
-                  }`}
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${selectedPopupTab === 'transaction'
+                    ? 'bg-cyan-100 text-cyan-700'
+                    : 'text-gray-500 hover:bg-gray-100'
+                    }`}
                 >
                   Plant Details
                 </button>
                 <button
                   onClick={() => setSelectedPopupTab('impact')}
-                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                    selectedPopupTab === 'impact'
-                      ? 'bg-cyan-100 text-cyan-700'
-                      : 'text-gray-500 hover:bg-gray-100'
-                  }`}
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${selectedPopupTab === 'impact'
+                    ? 'bg-cyan-100 text-cyan-700'
+                    : 'text-gray-500 hover:bg-gray-100'
+                    }`}
                 >
                   Impact Data {plantImpacts.length > 0 ? `(${plantImpacts.length})` : ''}
                 </button>
               </div>
             </div>
-            
+
             {/* Scrollable Content */}
             <div className="overflow-y-auto px-8 py-6" style={{ maxHeight: 'calc(80vh - 180px)' }}>
               {/* Plant Details Tab */}
@@ -1450,7 +1320,7 @@ useEffect(() => {
                       )}
                     </div>
                   </div>
-                  
+
                   {/* Additional Plant Details */}
                   <div className="mt-4 pt-4 border-t border-cyan-100/50">
                     <h4 className="text-sm font-semibold text-gray-700 mb-3">Additional Information</h4>
@@ -1479,7 +1349,7 @@ useEffect(() => {
                   </div>
                 </>
               )}
-              
+
               {/* Impact Data Tab */}
               {selectedPopupTab === 'impact' && (
                 <>
@@ -1491,7 +1361,7 @@ useEffect(() => {
                           <h4 className="text-lg font-semibold text-gray-800">Impact Assessment</h4>
                           <p className="text-xs text-gray-500 mt-0.5">Baseline year: 2025</p>
                         </div>
-                        
+
                         {/* Unit Selector Dropdown */}
                         {plantImpacts.length > 1 && (
                           <select
@@ -1508,7 +1378,7 @@ useEffect(() => {
                           </select>
                         )}
                       </div>
-                      
+
                       {displayImpact && (
                         <>
                           {/* Currently viewing indicator */}
@@ -1517,7 +1387,7 @@ useEffect(() => {
                               <span className="font-medium">Viewing:</span> {displayImpact.unitName}
                             </p>
                           </div>
-                          
+
                           {/* Metrics Grid */}
                           <div className="grid grid-cols-2 gap-3">
                             {/* CO2 Emissions */}
@@ -1526,35 +1396,35 @@ useEffect(() => {
                               <p className="text-2xl font-bold text-emerald-700">{displayImpact.co2.toFixed(2)}</p>
                               <p className="text-xs text-emerald-600 mt-0.5">Million Tonnes</p>
                             </div>
-                            
+
                             {/* Deaths Avoided */}
                             <div className="bg-gradient-to-br from-blue-50 to-blue-50/30 p-4 rounded-lg border border-blue-100/50">
                               <p className="text-xs font-medium text-blue-600 uppercase tracking-wide mb-2">Lives Saved</p>
                               <p className="text-2xl font-bold text-blue-700">{displayImpact.deaths.toLocaleString()}</p>
                               <p className="text-xs text-blue-600 mt-0.5">Deaths Avoided</p>
                             </div>
-                            
+
                             {/* Work Loss Days */}
                             <div className="bg-gradient-to-br from-purple-50 to-purple-50/30 p-4 rounded-lg border border-purple-100/50">
                               <p className="text-xs font-medium text-purple-600 uppercase tracking-wide mb-2">Health Impact</p>
                               <p className="text-2xl font-bold text-purple-700">{displayImpact.wlds.toLocaleString()}</p>
                               <p className="text-xs text-purple-600 mt-0.5">Work Days Recovered</p>
                             </div>
-                            
+
                             {/* Investment */}
                             <div className="bg-gradient-to-br from-amber-50 to-amber-50/30 p-4 rounded-lg border border-amber-100/50">
                               <p className="text-xs font-medium text-amber-600 uppercase tracking-wide mb-2">Investment</p>
                               <p className="text-2xl font-bold text-amber-700">${displayImpact.investment.toFixed(1)}M</p>
                               <p className="text-xs text-amber-600 mt-0.5">Total Capital</p>
                             </div>
-                            
+
                             {/* Economic Spillover */}
                             <div className="bg-gradient-to-br from-orange-50 to-orange-50/30 p-4 rounded-lg border border-orange-100/50">
                               <p className="text-xs font-medium text-orange-600 uppercase tracking-wide mb-2">Economic Impact</p>
                               <p className="text-2xl font-bold text-orange-700">${displayImpact.spillover.toFixed(1)}M</p>
                               <p className="text-xs text-orange-600 mt-0.5">Spillover Effect</p>
                             </div>
-                            
+
                             {/* Customer Savings */}
                             <div className="bg-gradient-to-br from-cyan-50 to-cyan-50/30 p-4 rounded-lg border border-cyan-100/50">
                               <p className="text-xs font-medium text-cyan-600 uppercase tracking-wide mb-2">Customer Savings</p>
@@ -1563,14 +1433,14 @@ useEffect(() => {
                                 <p className="text-xs text-cyan-600 mt-0.5">~{displayImpact.savingsPercent}% per kWh</p>
                               )}
                             </div>
-                            
+
                             {/* Permanent Jobs */}
                             <div className="bg-gradient-to-br from-teal-50 to-teal-50/30 p-4 rounded-lg border border-teal-100/50">
                               <p className="text-xs font-medium text-teal-600 uppercase tracking-wide mb-2">Jobs Created</p>
                               <p className="text-2xl font-bold text-teal-700">{displayImpact.permJobs.toLocaleString()}</p>
                               <p className="text-xs text-teal-600 mt-0.5">Permanent Positions</p>
                             </div>
-                            
+
                             {/* Temporary Jobs */}
                             <div className="bg-gradient-to-br from-sky-50 to-sky-50/30 p-4 rounded-lg border border-sky-100/50">
                               <p className="text-xs font-medium text-sky-600 uppercase tracking-wide mb-2">Temporary Jobs</p>
@@ -1603,7 +1473,7 @@ useEffect(() => {
       {selectedPlant && selectedPlant.isTransaction && (() => {
         const transaction = selectedPlant.transactionData;
         const transactionPlants = transaction?.plants || [];
-        
+
         // Get status color based on transaction_status values (green, amber, red, closed)
         const statusColors = {
           'green': { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-200' },
@@ -1614,11 +1484,11 @@ useEffect(() => {
         const statusKey = transaction?.transaction_status;
         const statusStyle = statusColors[statusKey] || { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200' };
         const statusLabel = TRANSACTION_STATUS_LABELS[statusKey] || transaction?.transaction_status || 'N/A';
-        
+
         return (
-          <div 
-            className="fixed bg-white rounded-xl shadow-2xl border border-gray-200 z-[100] max-h-[80vh] overflow-hidden" 
-            style={{ 
+          <div
+            className="fixed bg-white rounded-xl shadow-2xl border border-gray-200 z-[100] max-h-[80vh] overflow-hidden"
+            style={{
               width: '680px',
               top: popupPosition.y !== null ? `calc(80px + ${popupPosition.y}px)` : '80px',
               left: popupPosition.x !== null ? `calc(50% + ${popupPosition.x}px)` : '50%',
@@ -1626,14 +1496,14 @@ useEffect(() => {
             }}
           >
             {/* Draggable Header Bar */}
-            <div 
+            <div
               onMouseDown={handlePopupDragStart}
               onTouchStart={handlePopupDragStart}
               className="flex items-center justify-center py-1.5 cursor-move hover:bg-cyan-50/50 transition-colors rounded-t-xl border-b border-cyan-100/30"
             >
               <div className="w-10 h-1 bg-gray-300 rounded-full"></div>
             </div>
-            
+
             {/* Close button */}
             <button
               onClick={() => {
@@ -1655,7 +1525,7 @@ useEffect(() => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
-            
+
             {/* Header Section */}
             <div className="px-8 pt-4 pb-6 border-b border-gray-100">
               <div className="flex items-start justify-between pr-8">
@@ -1667,52 +1537,48 @@ useEffect(() => {
                   {statusLabel}
                 </span>
               </div>
-              
+
               {/* Tabs */}
               <div className="flex space-x-2 mt-4">
                 <button
                   onClick={() => setSelectedPopupTab('transaction')}
-                  className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-                    selectedPopupTab === 'transaction'
-                      ? 'bg-slate-800 text-white'
-                      : 'text-gray-500 hover:bg-gray-100'
-                  }`}
+                  className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${selectedPopupTab === 'transaction'
+                    ? 'bg-slate-800 text-white'
+                    : 'text-gray-500 hover:bg-gray-100'
+                    }`}
                 >
                   Overview
                 </button>
                 <button
                   onClick={() => setSelectedPopupTab('project')}
-                  className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-                    selectedPopupTab === 'project'
-                      ? 'bg-slate-800 text-white'
-                      : 'text-gray-500 hover:bg-gray-100'
-                  }`}
+                  className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${selectedPopupTab === 'project'
+                    ? 'bg-slate-800 text-white'
+                    : 'text-gray-500 hover:bg-gray-100'
+                    }`}
                 >
                   Deal Details
                 </button>
                 <button
                   onClick={() => setSelectedPopupTab('plants')}
-                  className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-                    selectedPopupTab === 'plants'
-                      ? 'bg-slate-800 text-white'
-                      : 'text-gray-500 hover:bg-gray-100'
-                  }`}
+                  className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${selectedPopupTab === 'plants'
+                    ? 'bg-slate-800 text-white'
+                    : 'text-gray-500 hover:bg-gray-100'
+                    }`}
                 >
                   Coal Plants ({transactionPlants.length || 1})
                 </button>
                 <button
                   onClick={() => setSelectedPopupTab('impact')}
-                  className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-                    selectedPopupTab === 'impact'
-                      ? 'bg-slate-800 text-white'
-                      : 'text-gray-500 hover:bg-gray-100'
-                  }`}
+                  className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${selectedPopupTab === 'impact'
+                    ? 'bg-slate-800 text-white'
+                    : 'text-gray-500 hover:bg-gray-100'
+                    }`}
                 >
                   Impact
                 </button>
               </div>
             </div>
-            
+
             {/* Scrollable Content */}
             <div className="overflow-y-auto px-8 py-6" style={{ maxHeight: 'calc(80vh - 180px)' }}>
               {/* Overview Tab */}
@@ -1736,19 +1602,19 @@ useEffect(() => {
                       <div>
                         <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Target Close Date</p>
                         <p className="text-base font-medium text-gray-700">
-                          {transaction?.deal_timeframe 
+                          {transaction?.deal_timeframe
                             ? new Date(transaction.deal_timeframe).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
                             : 'N/A'}
                         </p>
                       </div>
                     </div>
-                    
+
                     {/* Right Column */}
                     <div className="space-y-4">
                       <div>
                         <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Estimated Deal Size</p>
                         <p className="text-base font-semibold text-gray-800">
-                          {transaction?.estimated_deal_size 
+                          {transaction?.estimated_deal_size
                             ? `${transaction?.deal_currency || 'USD'} ${parseFloat(transaction.estimated_deal_size).toLocaleString()}`
                             : 'N/A'}
                         </p>
@@ -1763,14 +1629,14 @@ useEffect(() => {
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* Transaction Next Steps */}
                   {transaction?.transaction_next_steps && (() => {
                     // Parse next steps - could be JSON array or plain text
                     let nextStepsContent = null;
                     try {
-                      const parsed = typeof transaction.transaction_next_steps === 'string' 
-                        ? JSON.parse(transaction.transaction_next_steps) 
+                      const parsed = typeof transaction.transaction_next_steps === 'string'
+                        ? JSON.parse(transaction.transaction_next_steps)
                         : transaction.transaction_next_steps;
                       if (Array.isArray(parsed)) {
                         nextStepsContent = (
@@ -1798,7 +1664,7 @@ useEffect(() => {
                       </div>
                     );
                   })()}
-                  
+
                   {/* Transaction Intelligence / Notes */}
                   {transaction?.notes && (
                     <div className="mt-4 pt-4 border-t border-gray-100">
@@ -1808,7 +1674,7 @@ useEffect(() => {
                   )}
                 </>
               )}
-              
+
               {/* Project Tab */}
               {selectedPopupTab === 'project' && (
                 <>
@@ -1832,7 +1698,7 @@ useEffect(() => {
                         <p className="text-base font-medium text-gray-700">{transaction?.owner || 'N/A'}</p>
                       </div>
                     </div>
-                    
+
                     {/* Right Column */}
                     <div className="space-y-4">
                       <div>
@@ -1853,7 +1719,7 @@ useEffect(() => {
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* Key Contacts */}
                   {transaction?.key_contacts && (
                     <div className="mt-6 pt-6 border-t border-gray-100">
@@ -1861,7 +1727,7 @@ useEffect(() => {
                       <p className="text-sm text-gray-700 leading-relaxed">{transaction.key_contacts}</p>
                     </div>
                   )}
-                  
+
                   {/* Description */}
                   {transaction?.project_description && (
                     <div className="mt-4 pt-4 border-t border-gray-100">
@@ -1871,7 +1737,7 @@ useEffect(() => {
                   )}
                 </>
               )}
-              
+
               {/* Coal Plants Tab */}
               {selectedPopupTab === 'plants' && (
                 <>
@@ -1913,9 +1779,9 @@ useEffect(() => {
                           {plant.source && (
                             <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between">
                               <p className="text-xs text-gray-500">Source</p>
-                              <a 
-                                href={plant.source.split('\n')[0]} 
-                                target="_blank" 
+                              <a
+                                href={plant.source.split('\n')[0]}
+                                target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-cyan-600 hover:text-cyan-700 flex items-center gap-1 text-xs"
                               >
@@ -1957,7 +1823,7 @@ useEffect(() => {
                   )}
                 </>
               )}
-              
+
               {/* Impact Data Tab */}
               {selectedPopupTab === 'impact' && (
                 <div className="text-center py-12">
@@ -1979,7 +1845,7 @@ useEffect(() => {
       {selectedPlantProjects.length > 0 && (
         <div className="fixed left-1/2 bg-white shadow-2xl rounded-lg z-50" style={{ bottom: '16px', height: `${panelHeight}vh`, width: 'calc(100% - 80px)', maxWidth: '1400px', transform: 'translateX(-50%)' }}>
           {/* Drag handle */}
-          <div 
+          <div
             onMouseDown={handleDragStart}
             className="flex items-center justify-center py-1 cursor-ns-resize hover:bg-secondary-100 rounded-t-lg transition-colors"
           >
@@ -2024,8 +1890,8 @@ useEffect(() => {
               </thead>
               <tbody>
                 {selectedPlantProjects.map((project, index) => (
-                  <tr 
-                    key={index} 
+                  <tr
+                    key={index}
                     className="border-b border-secondary-100 hover:bg-emerald-50 cursor-pointer transition-colors"
                     onClick={() => setSelectedProjectForDetail(project)}
                     title="Click to view project details and history"
@@ -2040,12 +1906,11 @@ useEffect(() => {
                       <div className="text-xs text-secondary-500">{project['Unit name'] || `Unit ${index + 1}`} • {project['Capacity (MW)']} MW</div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        project['Operational Status'] === 'Operating' ? 'bg-green-100 text-green-800' :
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${project['Operational Status'] === 'Operating' ? 'bg-green-100 text-green-800' :
                         project['Operational Status'] === 'Retired' ? 'bg-orange-100 text-orange-800' :
-                        project['Operational Status'] === 'Planning' ? 'bg-blue-100 text-blue-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
+                          project['Operational Status'] === 'Planning' ? 'bg-blue-100 text-blue-800' :
+                            'bg-gray-100 text-gray-800'
+                        }`}>
                         {project['Operational Status']}
                       </span>
                     </td>
@@ -2090,7 +1955,7 @@ useEffect(() => {
           onClose={() => setSelectedProjectForDetail(null)}
           onUpdate={(updatedProject) => {
             // Update the project in our local state
-            setSelectedPlantProjects(prev => 
+            setSelectedPlantProjects(prev =>
               prev.map(p => p.id === updatedProject.id ? { ...p, ...updatedProject } : p)
             );
             setMapData(prev =>
