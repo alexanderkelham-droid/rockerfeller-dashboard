@@ -732,10 +732,10 @@ const TransactionDetail = ({
                     onClick={() => handleEngagementClick(status.id)}
                     title={status.label}
                     className={`flex-1 relative py-3 px-4 text-sm font-medium transition-colors ${isActive
-                        ? 'bg-primary-600 text-white'
-                        : isCompleted
-                          ? 'bg-primary-100 text-primary-700 hover:bg-primary-200'
-                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                      ? 'bg-primary-600 text-white'
+                      : isCompleted
+                        ? 'bg-primary-100 text-primary-700 hover:bg-primary-200'
+                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                       } ${index === 0 ? 'rounded-l-lg' : ''} ${isLast ? 'rounded-r-lg' : ''}`}
                   >
                     <div className="flex items-center justify-center gap-2">
@@ -769,8 +769,8 @@ const TransactionDetail = ({
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id
-                  ? 'border-primary-600 text-primary-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                ? 'border-primary-600 text-primary-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
             >
               {tab.label}
@@ -1360,7 +1360,7 @@ const TransactionDetail = ({
                     className="flex-1"
                   />
                   <span className={`text-lg font-bold min-w-[50px] text-right ${(formData.transaction_confidence_rating || 0) >= 70 ? 'text-emerald-600' :
-                      (formData.transaction_confidence_rating || 0) >= 40 ? 'text-amber-600' : 'text-red-600'
+                    (formData.transaction_confidence_rating || 0) >= 40 ? 'text-amber-600' : 'text-red-600'
                     }`}>
                     {formData.transaction_confidence_rating || 0}%
                   </span>
@@ -1447,8 +1447,8 @@ const TransactionDetail = ({
                       type="button"
                       onClick={() => handlePartnerToggle(partner)}
                       className={`px-3 py-1.5 text-sm rounded border transition-colors ${formData.funded_delivery_partners?.includes(partner)
-                          ? 'border-primary-500 bg-primary-50 text-primary-700'
-                          : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                        ? 'border-primary-500 bg-primary-50 text-primary-700'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
                         }`}
                     >
                       {partner}
@@ -1478,15 +1478,15 @@ const TransactionDetail = ({
         </div>
 
         {/* Middle Column - Notes & Activities */}
-        <div className="w-1/3 border-r border-gray-200 bg-white overflow-hidden flex flex-col">
+        <div className="w-1/3 border-r border-gray-200 bg-white overflow-y-auto">
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-gray-900">Notes & Activities</h3>
               <button
                 onClick={() => setShowActivityForm(!showActivityForm)}
                 className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${showActivityForm
-                    ? 'bg-gray-200 text-gray-700'
-                    : 'bg-primary-600 text-white hover:bg-primary-700'
+                  ? 'bg-gray-200 text-gray-700'
+                  : 'bg-primary-600 text-white hover:bg-primary-700'
                   }`}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1508,8 +1508,8 @@ const TransactionDetail = ({
                         key={type.id}
                         onClick={() => setNewActivity(prev => ({ ...prev, type: type.id }))}
                         className={`flex flex-col items-center p-2 rounded-lg border-2 transition-all text-xs ${newActivity.type === type.id
-                            ? 'border-primary-500 bg-primary-50'
-                            : 'border-gray-200 bg-white hover:border-gray-300'
+                          ? 'border-primary-500 bg-primary-50'
+                          : 'border-gray-200 bg-white hover:border-gray-300'
                           }`}
                         title={type.description}
                       >
@@ -1611,7 +1611,7 @@ const TransactionDetail = ({
           </div>
 
           {/* Activities List */}
-          <div className="flex-1 overflow-y-auto">
+          <div>
             {!transaction?.id ? (
               <div className="flex flex-col items-center justify-center h-full text-gray-400 p-8">
                 <svg className="w-12 h-12 mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1730,13 +1730,13 @@ const TransactionDetail = ({
             <h4 className="text-sm text-gray-500 mb-2">Transaction Score</h4>
             <div className="flex items-end gap-3">
               <span className={`text-4xl font-bold ${(formData.transaction_confidence_rating || 0) >= 70 ? 'text-emerald-600' :
-                  (formData.transaction_confidence_rating || 0) >= 40 ? 'text-amber-600' : 'text-red-600'
+                (formData.transaction_confidence_rating || 0) >= 40 ? 'text-amber-600' : 'text-red-600'
                 }`}>
                 {formData.transaction_confidence_rating || 0}
               </span>
               <div className="mb-1">
                 <span className={`text-sm font-medium ${(formData.transaction_confidence_rating || 0) >= 70 ? 'text-emerald-600' :
-                    (formData.transaction_confidence_rating || 0) >= 40 ? 'text-amber-600' : 'text-red-600'
+                  (formData.transaction_confidence_rating || 0) >= 40 ? 'text-amber-600' : 'text-red-600'
                   }`}>
                   {(formData.transaction_confidence_rating || 0) >= 70 ? 'Grade A' :
                     (formData.transaction_confidence_rating || 0) >= 40 ? 'Grade B' : 'Grade C'}
